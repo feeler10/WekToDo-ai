@@ -1,11 +1,15 @@
 import pytest
 
-from app.intent.enums import IntentType
+from app.intent.enums import IntentType, TimeScope
 from app.intent.exceptions import (
     InvalidIntentOutputError,
     IntentProviderUnavailableError,
 )
-from app.intent.models import IntentRecognitionContext, IntentResult
+from app.intent.models import (
+    IntentRecognitionContext,
+    IntentResult,
+    TaskQueryIntent,
+)
 from app.intent.providers.fake import FakeIntentClassifier
 from app.intent.service import IntentRecognitionService
 
@@ -29,6 +33,7 @@ async def test_service_returns_validated_provider_result() -> None:
         intent=IntentType.QUERY_TASKS,
         confidence=0.8,
         reason='用户正在查询任务',
+        query=TaskQueryIntent(time_scope=TimeScope.TODAY),
     )
     service = IntentRecognitionService(FakeIntentClassifier(expected))
 

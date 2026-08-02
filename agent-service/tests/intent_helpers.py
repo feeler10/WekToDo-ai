@@ -1,5 +1,9 @@
-from app.intent.enums import IntentType
-from app.intent.models import IntentRecognitionContext, IntentResult
+from app.intent.enums import IntentType, TimeScope
+from app.intent.models import (
+    IntentRecognitionContext,
+    IntentResult,
+    TaskQueryIntent,
+)
 from app.intent.providers.fake import FakeIntentClassifier
 from app.intent.service import IntentRecognitionService
 from app.services.task_reference import parse_status_update
@@ -16,10 +20,17 @@ class ExistingFlowFakeIntentClassifier(FakeIntentClassifier):
             marker in message
             for marker in ('查询', '查看', '哪些', '什么任务', '今日任务')
         ):
+            if '今天' in message or '今日' in message:
+                time_scope = TimeScope.TODAY
+            elif '逾期' in message:
+                time_scope = TimeScope.OVERDUE
+            else:
+                time_scope = TimeScope.ALL
             return IntentResult(
                 intent=IntentType.QUERY_TASKS,
                 confidence=1,
                 reason='测试查询意图',
+                query=TaskQueryIntent(time_scope=time_scope),
             )
         try:
             update = parse_status_update(message)

@@ -6,6 +6,7 @@ from app.intent.contracts import IntentClassifier
 from app.intent.enums import IntentType
 from app.intent.exceptions import IntentRecognitionError
 from app.intent.models import IntentRecognitionContext, IntentResult
+from app.intent.query_validation import validate_query_completeness
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,8 @@ class IntentRecognitionService:
             return self._empty_input_result()
         try:
             result = await self._classifier.classify(context)
-            return IntentResult.model_validate(result)
+            validated = IntentResult.model_validate(result)
+            return validate_query_completeness(validated, context)
         except (IntentRecognitionError, ValidationError) as exc:
             logger.warning('Intent recognition failed: %s', type(exc).__name__)
             return self._fallback_result()

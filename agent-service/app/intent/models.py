@@ -1,15 +1,62 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Literal
 
-from app.intent.enums import IntentType
-from app.schemas.task import TaskStatus
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+from app.intent.enums import ClarificationReason, IntentType, TimeScope
+from app.schemas.task import TaskPriority, TaskStatus, utc_now
 
 
 class IntentRecognitionContext(BaseModel):
     message: str
     conversation_id: str | None = None
     user_id: str | None = None
+    current_datetime: AwareDatetime = Field(default_factory=utc_now)
+    business_timezone: str = Field(default='UTC', min_length=1)
+    week_starts_on: Literal['Monday'] = 'Monday'
     recent_messages: list[str] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class TaskQueryIntent(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    time_scope: TimeScope = TimeScope.UNSPECIFIED
+    statuses: set[TaskStatus] | None = None
+    priorities: set[TaskPriority] | None = None
+    start_at: AwareDatetime | None = None
+    end_at: AwareDatetime | None = None
+    raw_time_expression: str | None = Field(default=None, max_length=100)
+
+    @field_validator('raw_time_expression')
+    @classmethod
+    def normalize_raw_time_expression(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode='after')
+    def validate_time_range(self) -> 'TaskQueryIntent':
+        if self.time_scope != TimeScope.CUSTOM and (
+            self.start_at is not None or self.end_at is not None
+        ):
+            raise ValueError(
+                'start_at and end_at are only allowed for CUSTOM'
+            )
+        if (
+            self.start_at is not None
+            and self.end_at is not None
+            and self.end_at <= self.start_at
+        ):
+            raise ValueError('end_at must be later than start_at')
+        return self
 
 
 class IntentResult(BaseModel):
@@ -20,8 +67,18 @@ class IntentResult(BaseModel):
     reason: str = Field(min_length=1, max_length=200)
     task_reference: str | None = None
     target_status: TaskStatus | None = None
+    query: TaskQueryIntent | None = None
     needs_clarification: bool = False
+    clarification_reason: ClarificationReason | None = None
     clarification_question: str | None = Field(default=None, max_length=200)
+
+    @field_validator('task_reference')
+    @classmethod
+    def normalize_task_reference(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @model_validator(mode='after')
     def validate_business_rules(self) -> 'IntentResult':
@@ -50,4 +107,6 @@ class IntentResult(BaseModel):
             raise ValueError(
                 'target_status is required for an unambiguous status update'
             )
+        if self.intent != IntentType.QUERY_TASKS and self.query is not None:
+            raise ValueError('query is only allowed for QUERY_TASKS')
         return self

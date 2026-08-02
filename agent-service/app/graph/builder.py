@@ -59,7 +59,11 @@ def build_task_graph(
     builder = StateGraph(TaskAgentState)
     builder.add_node(
         'classify_intent',
-        partial(classify_intent, service=dependencies.intent_service),
+        partial(
+            classify_intent,
+            service=dependencies.intent_service,
+            clock=dependencies.clock,
+        ),
     )
     builder.add_node(
         'parse_task',
