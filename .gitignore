@@ -7,3 +7,6 @@ pytest-cache-files-*/
 htmlcov/
 *.egg-info/
 .venv/
+node_modules/
+dist/
+*.tsbuildinfo

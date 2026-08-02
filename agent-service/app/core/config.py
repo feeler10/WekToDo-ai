@@ -1,8 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -14,6 +15,25 @@ class Settings(BaseSettings):
     app_host: str = '127.0.0.1'
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_debug: bool = False
+    redis_url: str = 'redis://127.0.0.1:6379/0'
+    checkpoint_redis_url: str = 'redis://127.0.0.1:6379/0'
+    llm_model: str = 'gpt-4.1-mini'
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_structured_output_method: Literal[
+        'json_schema',
+        'function_calling',
+        'json_mode',
+    ] = 'json_mode'
+    task_parse_max_attempts: int = Field(default=3, ge=1, le=5)
+
+    @field_validator('checkpoint_redis_url')
+    @classmethod
+    def require_checkpoint_database_zero(cls, value: str) -> str:
+        database = urlparse(value).path.strip('/')
+        if database not in ('', '0'):
+            raise ValueError('checkpoint_redis_url must use Redis database 0')
+        return value
 
     model_config = SettingsConfigDict(
         env_file=REPOSITORY_ROOT / '.env',

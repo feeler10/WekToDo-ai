@@ -1,3 +1,17 @@
-# 在服务实现后，将具体容器配置添加到 services 下。
-services: {}
+services:
+  redis:
+    image: redis:8.0-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
+volumes:
+  redis-data:
