@@ -6,6 +6,7 @@ from app.intent.models import (
 )
 from app.intent.providers.fake import FakeIntentClassifier
 from app.intent.service import IntentRecognitionService
+from app.schemas.task import TaskStatus
 from app.services.task_reference import parse_status_update
 
 
@@ -26,11 +27,16 @@ class ExistingFlowFakeIntentClassifier(FakeIntentClassifier):
                 time_scope = TimeScope.OVERDUE
             else:
                 time_scope = TimeScope.ALL
+            statuses = (
+                {TaskStatus.TODO, TaskStatus.DOING, TaskStatus.BLOCKED}
+                if time_scope == TimeScope.TODAY
+                else None
+            )
             return IntentResult(
                 intent=IntentType.QUERY_TASKS,
                 confidence=1,
                 reason='测试查询意图',
-                query=TaskQueryIntent(time_scope=time_scope),
+                query=TaskQueryIntent(time_scope=time_scope, statuses=statuses),
             )
         try:
             update = parse_status_update(message)

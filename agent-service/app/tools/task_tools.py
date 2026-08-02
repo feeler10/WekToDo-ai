@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -57,15 +57,15 @@ async def get_today_tasks(
     zone = ZoneInfo(timezone_name)
     local_date = current.astimezone(zone).date()
     local_start = datetime.combine(local_date, time.min, tzinfo=zone)
-    local_end = local_start + timedelta(days=1)
+    local_end = datetime.combine(
+        local_date + timedelta(days=1), time.min, tzinfo=zone
+    )
     return await repository.list_tasks(
         TaskQuery(
             user_id=user_id,
             statuses=_OPEN_STATUSES,
-            deadline_from=local_start.astimezone(timezone.utc),
-            deadline_to=(local_end - timedelta(microseconds=1)).astimezone(
-                timezone.utc
-            ),
+            deadline_from=local_start,
+            deadline_to=local_end,
         )
     )
 
@@ -83,16 +83,11 @@ async def get_overdue_tasks(
         TaskQuery(
             user_id=user_id,
             statuses=_OPEN_STATUSES,
-            deadline_to=current,
+            overdue_before=current,
             limit=100,
         )
     )
-    items = [
-        task
-        for task in result.items
-        if task.deadline is not None and task.deadline < current
-    ]
-    return TaskListResponse(items=items, total=len(items))
+    return result
 
 
 async def get_task_detail(

@@ -8,6 +8,10 @@ _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.CANCELLED: frozenset(),
 }
 
+TERMINAL_TASK_STATUSES = frozenset(
+    {TaskStatus.DONE, TaskStatus.CANCELLED}
+)
+
 
 class InvalidTaskStatusTransition(ValueError):
     def __init__(self, current: TaskStatus, target: TaskStatus) -> None:

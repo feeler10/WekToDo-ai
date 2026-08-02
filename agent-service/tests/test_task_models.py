@@ -150,3 +150,14 @@ def test_task_query_rejects_reversed_deadline_range() -> None:
             deadline_from=start,
             deadline_to=end,
         )
+
+
+def test_task_query_rejects_empty_half_open_deadline_range() -> None:
+    boundary = datetime(2026, 8, 2, tzinfo=timezone.utc)
+
+    with pytest.raises(ValidationError, match='deadline_to'):
+        TaskQuery(
+            user_id='user-1',
+            deadline_from=boundary,
+            deadline_to=boundary,
+        )

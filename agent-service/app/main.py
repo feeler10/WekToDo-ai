@@ -11,6 +11,7 @@ from app.storage.redis_client import create_redis_client
 from app.storage.redis_checkpoint import create_redis_checkpointer
 from app.graph.builder import GraphDependencies, build_task_graph
 from app.intent.factory import create_intent_service
+from app.matching.factory import create_task_matcher
 from app.repositories.redis_task import RedisTaskRepository
 from app.services.agent import TaskAgentService
 from app.services.parser_factory import create_task_parser
@@ -46,6 +47,9 @@ def create_app(
                             parser=create_task_parser(app_settings),
                             intent_service=create_intent_service(app_settings),
                             task_repository=repository,
+                            task_matcher=create_task_matcher(
+                                app_settings.task_matcher_provider
+                            ),
                         ),
                         checkpointer=checkpointer,
                     )

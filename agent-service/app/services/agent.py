@@ -55,6 +55,7 @@ class TaskAgentService:
             'user_priority': None,
             'created_task': None,
             'query_kind': None,
+            'task_query_plan': None,
             'task_reference': None,
             'target_status': None,
             'task_results': [],

@@ -32,6 +32,7 @@ class TaskAgentState(TypedDict, total=False):
     user_priority: str | None
     created_task: dict[str, Any] | None
     query_kind: str | None
+    task_query_plan: dict[str, Any] | None
     task_reference: str | None
     target_status: str | None
     task_results: list[dict[str, Any]]

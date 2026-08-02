@@ -95,6 +95,7 @@ class TaskQuery(BaseModel):
     category: str | None = None
     deadline_from: AwareDatetime | None = None
     deadline_to: AwareDatetime | None = None
+    overdue_before: AwareDatetime | None = None
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=50, ge=1, le=100)
 
@@ -103,9 +104,9 @@ class TaskQuery(BaseModel):
         if (
             self.deadline_from is not None
             and self.deadline_to is not None
-            and self.deadline_to < self.deadline_from
+            and self.deadline_to <= self.deadline_from
         ):
-            raise ValueError('deadline_to must not be earlier than deadline_from')
+            raise ValueError('deadline_to must be later than deadline_from')
         return self
 
 

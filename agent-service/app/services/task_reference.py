@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from app.schemas.task import Task, TaskPriority, TaskStatus
+from app.schemas.task import TaskPriority, TaskStatus
 from app.schemas.task_operation import TaskQueryKind, TaskReferenceUpdate
 
 
@@ -70,24 +70,3 @@ def parse_status_update(message: str) -> TaskReferenceUpdate:
     if not reference:
         raise ValueError('Could not determine task reference')
     return TaskReferenceUpdate(reference=reference, target_status=target)
-
-
-def resolve_task_candidates(reference: str, tasks: list[Task]) -> list[Task]:
-    normalized = _normalize(reference)
-    by_id = [task for task in tasks if task.id == reference or task.id in reference]
-    if by_id:
-        return by_id
-
-    exact = [task for task in tasks if _normalize(task.title) == normalized]
-    if exact:
-        return exact
-    return [
-        task
-        for task in tasks
-        if normalized in _normalize(task.title)
-        or _normalize(task.title) in normalized
-    ]
-
-
-def _normalize(value: str) -> str:
-    return re.sub(r'\s+', '', value).casefold()

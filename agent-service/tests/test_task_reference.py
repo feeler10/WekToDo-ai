@@ -1,10 +1,8 @@
 import pytest
 
+from app.matching.keyword import KeywordTaskMatcher
 from app.schemas.task import Task, TaskStatus
-from app.services.task_reference import (
-    parse_status_update,
-    resolve_task_candidates,
-)
+from app.services.task_reference import parse_status_update
 
 
 @pytest.mark.parametrize(
@@ -33,6 +31,10 @@ def test_resolve_reference_returns_all_exact_duplicate_titles() -> None:
         Task(id='task-3', user_id='user-1', title='其他任务'),
     ]
 
-    matches = resolve_task_candidates('论文实验', tasks)
+    matches = KeywordTaskMatcher().match(
+        reference='论文实验',
+        user_id='user-1',
+        tasks=tasks,
+    ).tasks
 
     assert [task.id for task in matches] == ['task-1', 'task-2']

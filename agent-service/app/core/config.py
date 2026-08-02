@@ -7,6 +7,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.intent.enums import IntentClassifierProvider
+from app.matching.factory import TaskMatcherProvider
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
@@ -32,6 +33,9 @@ class Settings(BaseSettings):
         IntentClassifierProvider.LLM
     )
     intent_model_name: str = 'qwen-flash'
+    task_matcher_provider: TaskMatcherProvider = (
+        TaskMatcherProvider.KEYWORD
+    )
     intent_model_temperature: float = Field(default=0, ge=0, le=2)
     intent_model_max_tokens: int = Field(default=200, ge=1)
     intent_model_enable_thinking: bool = False

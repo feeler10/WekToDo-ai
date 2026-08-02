@@ -21,7 +21,10 @@ from app.schemas.task import (
     TaskStatus,
     utc_now,
 )
-from app.services.task_state import validate_status_transition
+from app.services.task_state import (
+    TERMINAL_TASK_STATUSES,
+    validate_status_transition,
+)
 
 
 class RedisTaskRepository(TaskRepository):
@@ -242,9 +245,16 @@ class RedisTaskRepository(TaskRepository):
             ):
                 continue
             if query.deadline_to is not None and (
-                task.deadline is None or task.deadline > query.deadline_to
+                task.deadline is None or task.deadline >= query.deadline_to
             ):
                 continue
+            if query.overdue_before is not None and (
+                task.deadline is None
+                or task.deadline >= query.overdue_before
+                or task.status in TERMINAL_TASK_STATUSES
+            ):
+                continue
+
             yield task
 
     def _key(self, *parts: str) -> str:

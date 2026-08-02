@@ -39,6 +39,8 @@ from app.graph.routing import (
 )
 from app.graph.state import TaskAgentState
 from app.intent.service import IntentRecognitionService
+from app.matching.base import TaskMatcher
+from app.matching.factory import create_task_matcher
 from app.repositories.base import TaskRepository
 from app.schemas.task import utc_now
 
@@ -49,6 +51,7 @@ class GraphDependencies:
     intent_service: IntentRecognitionService
     task_repository: TaskRepository | None = None
     clock: Callable[[], datetime] = utc_now
+    task_matcher: TaskMatcher | None = None
 
 
 def build_task_graph(
@@ -57,6 +60,7 @@ def build_task_graph(
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
     builder = StateGraph(TaskAgentState)
+    task_matcher = dependencies.task_matcher or create_task_matcher()
     builder.add_node(
         'classify_intent',
         partial(
@@ -77,6 +81,7 @@ def build_task_graph(
             query_task_data,
             repository=dependencies.task_repository,
             clock=dependencies.clock,
+            task_matcher=task_matcher,
         ),
     )
     builder.add_node(
@@ -84,6 +89,7 @@ def build_task_graph(
         partial(
             resolve_task_reference,
             repository=dependencies.task_repository,
+            task_matcher=task_matcher,
         ),
     )
     builder.add_node('prepare_status_update', prepare_status_update)
