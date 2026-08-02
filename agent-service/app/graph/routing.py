@@ -1,12 +1,15 @@
 from typing import Literal
 
-from app.graph.classifier import TaskIntent
 from app.graph.state import TaskAgentState
+from app.intent.enums import IntentType
 
 Route = Literal[
     'parse_task',
-    'parse_task_reference',
     'query_task_data',
+    'request_intent_clarification',
+    'respond_to_general_chat',
+    'respond_feature_unavailable',
+    'respond_unknown_intent',
     'resolve_task_reference',
     'validate_task',
     'calculate_priority',
@@ -26,19 +29,23 @@ Route = Literal[
 def route_after_classification(state: TaskAgentState) -> Route:
     if state.get('error_message'):
         return 'handle_error'
-    if state.get('intent') == TaskIntent.CREATE_TASK.value:
+    result = state.get('intent_result') or {}
+    if result.get('needs_clarification') is True:
+        return 'request_intent_clarification'
+    if state.get('intent') == IntentType.CREATE_TASK.value:
         return 'parse_task'
-    if state.get('intent') == TaskIntent.QUERY_TASK.value:
+    if state.get('intent') == IntentType.QUERY_TASKS.value:
         return 'query_task_data'
-    if state.get('intent') == TaskIntent.UPDATE_TASK.value:
-        return 'parse_task_reference'
-    return 'handle_error'
-
-
-def route_after_task_reference_parsing(state: TaskAgentState) -> Route:
-    if state.get('error_message'):
-        return 'handle_error'
-    return 'resolve_task_reference'
+    if state.get('intent') == IntentType.UPDATE_TASK_STATUS.value:
+        return 'resolve_task_reference'
+    if state.get('intent') in {
+        IntentType.UPDATE_TASK.value,
+        IntentType.DECOMPOSE_TASK.value,
+    }:
+        return 'respond_feature_unavailable'
+    if state.get('intent') == IntentType.GENERAL_CHAT.value:
+        return 'respond_to_general_chat'
+    return 'respond_unknown_intent'
 
 
 def route_after_query(state: TaskAgentState) -> Route:

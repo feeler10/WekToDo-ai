@@ -1,18 +1,29 @@
-from app.graph.classifier import IntentClassifier
 from app.graph.state import TaskAgentState
+from app.intent.models import IntentRecognitionContext
+from app.intent.service import IntentRecognitionService
 
 
-def classify_intent(
+async def classify_intent(
     state: TaskAgentState,
     *,
-    classifier: IntentClassifier,
+    service: IntentRecognitionService,
 ) -> dict[str, object]:
-    try:
-        result = classifier.classify(state.get('user_message', ''))
-    except Exception as exc:
-        return {'error_message': f'Intent classification failed: {exc}'}
+    result = await service.recognize(
+        IntentRecognitionContext(
+            message=state.get('user_message', ''),
+            conversation_id=state.get('thread_id'),
+            user_id=state.get('user_id'),
+        )
+    )
     return {
+        'intent_result': result.model_dump(mode='json'),
         'intent': result.intent.value,
         'intent_confidence': result.confidence,
+        'task_reference': result.task_reference,
+        'target_status': (
+            result.target_status.value
+            if result.target_status is not None
+            else None
+        ),
         'error_message': None,
     }

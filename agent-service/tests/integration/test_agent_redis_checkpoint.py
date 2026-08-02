@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 from app.graph.builder import GraphDependencies, build_task_graph
+from tests.intent_helpers import existing_flow_intent_service
 from app.repositories.redis_task import RedisTaskRepository
 from app.storage.redis_checkpoint import create_redis_checkpointer
 from tests.test_human_in_the_loop import SequenceParser, _action_id, _draft, _state
@@ -37,6 +38,7 @@ async def test_interrupt_resumes_from_redis_checkpoint_with_rebuilt_graph() -> N
             await checkpointer.asetup()
             first_graph = build_task_graph(
                 GraphDependencies(
+                    intent_service=existing_flow_intent_service(),
                     parser=SequenceParser(_draft('Redis 恢复任务')),
                     task_repository=repository,
                 ),
@@ -49,6 +51,7 @@ async def test_interrupt_resumes_from_redis_checkpoint_with_rebuilt_graph() -> N
 
             rebuilt_graph = build_task_graph(
                 GraphDependencies(
+                    intent_service=existing_flow_intent_service(),
                     parser=SequenceParser(),
                     task_repository=repository,
                 ),

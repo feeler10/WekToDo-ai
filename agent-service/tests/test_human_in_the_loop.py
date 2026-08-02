@@ -6,6 +6,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from app.graph.builder import GraphDependencies, build_task_graph
+from tests.intent_helpers import existing_flow_intent_service
 from app.schemas.task import Task, TaskListResponse, TaskQuery, TaskStatus
 
 
@@ -93,6 +94,7 @@ async def test_approve_resumes_checkpoint_and_creates_once() -> None:
     repository = InMemoryTaskRepository()
     graph = build_task_graph(
         GraphDependencies(
+            intent_service=existing_flow_intent_service(),
             parser=SequenceParser(_draft('提交论文')),
             task_repository=repository,
         ),
@@ -123,6 +125,7 @@ async def test_edit_returns_to_validation_and_requires_new_confirmation() -> Non
     repository = InMemoryTaskRepository()
     graph = build_task_graph(
         GraphDependencies(
+            intent_service=existing_flow_intent_service(),
             parser=SequenceParser(_draft('旧标题')),
             task_repository=repository,
         ),
@@ -162,6 +165,7 @@ async def test_reject_ends_without_writing() -> None:
     repository = InMemoryTaskRepository()
     graph = build_task_graph(
         GraphDependencies(
+            intent_service=existing_flow_intent_service(),
             parser=SequenceParser(_draft('不要创建')),
             task_repository=repository,
         ),
@@ -187,7 +191,7 @@ async def test_regenerate_parses_again_and_interrupts_with_new_draft() -> None:
     parser = SequenceParser(_draft('第一版'), _draft('重新生成版'))
     repository = InMemoryTaskRepository()
     graph = build_task_graph(
-        GraphDependencies(parser=parser, task_repository=repository),
+        GraphDependencies(intent_service=existing_flow_intent_service(), parser=parser, task_repository=repository),
         checkpointer=InMemorySaver(),
     )
     config = _config('regenerate-thread')

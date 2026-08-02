@@ -10,6 +10,7 @@ from app.core.exceptions import register_exception_handlers
 from app.storage.redis_client import create_redis_client
 from app.storage.redis_checkpoint import create_redis_checkpointer
 from app.graph.builder import GraphDependencies, build_task_graph
+from app.intent.factory import create_intent_service
 from app.repositories.redis_task import RedisTaskRepository
 from app.services.agent import TaskAgentService
 from app.services.parser_factory import create_task_parser
@@ -43,6 +44,7 @@ def create_app(
                     graph = build_task_graph(
                         GraphDependencies(
                             parser=create_task_parser(app_settings),
+                            intent_service=create_intent_service(app_settings),
                             task_repository=repository,
                         ),
                         checkpointer=checkpointer,

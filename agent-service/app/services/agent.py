@@ -43,6 +43,7 @@ class TaskAgentService:
             'user_message': request.message,
             'timezone': request.timezone,
             'request_id': request.request_id,
+            'intent_result': None,
             'task_draft': None,
             'parsed_task': None,
             'pending_action': None,
@@ -117,6 +118,7 @@ class TaskAgentService:
         task_results = values.get('task_results') or []
         candidate_tasks = values.get('candidate_tasks') or []
         final = values.get('final_response')
+        intent_result = values.get('intent_result') or {}
 
         if pending:
             status = 'awaiting_confirmation'
@@ -126,6 +128,9 @@ class TaskAgentService:
                 if pending_action.get('action_type') == 'update_task_status'
                 else 'Review the task draft before creation'
             )
+        elif intent_result.get('needs_clarification') is True:
+            status = 'needs_clarification'
+            message = str(final or intent_result.get('clarification_question'))
         elif error:
             status = 'error'
             message = str(final or error)

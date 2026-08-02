@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.intent.enums import IntentClassifierProvider
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -26,6 +28,13 @@ class Settings(BaseSettings):
         'json_mode',
     ] = 'json_mode'
     task_parse_max_attempts: int = Field(default=3, ge=1, le=5)
+    intent_classifier_provider: IntentClassifierProvider = (
+        IntentClassifierProvider.LLM
+    )
+    intent_model_name: str = 'qwen-flash'
+    intent_model_temperature: float = Field(default=0, ge=0, le=2)
+    intent_model_max_tokens: int = Field(default=200, ge=1)
+    intent_model_enable_thinking: bool = False
 
     @field_validator('checkpoint_redis_url')
     @classmethod

@@ -6,7 +6,8 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.graph.builder import GraphDependencies, build_task_graph
-from app.graph.classifier import TaskIntent
+from tests.intent_helpers import existing_flow_intent_service
+from app.intent.enums import IntentType
 from app.schemas.task import TaskPriority
 
 
@@ -57,7 +58,7 @@ async def test_create_task_path_calculates_priority_with_fake_parser() -> None:
         }
     )
     graph = build_task_graph(
-        GraphDependencies(parser=parser),
+        GraphDependencies(intent_service=existing_flow_intent_service(), parser=parser),
         checkpointer=InMemorySaver(),
     )
 
@@ -66,7 +67,7 @@ async def test_create_task_path_calculates_priority_with_fake_parser() -> None:
         config={'configurable': {'thread_id': 'thread-1'}},
     )
 
-    assert result['intent'] == TaskIntent.CREATE_TASK.value
+    assert result['intent'] == IntentType.CREATE_TASK.value
     assert result['parsed_task']['user_id'] == 'user-1'
     assert result['parsed_task']['title'] == '完成论文实验'
     assert result['validation_passed'] is True
@@ -81,11 +82,11 @@ async def test_create_task_path_calculates_priority_with_fake_parser() -> None:
 @pytest.mark.anyio
 async def test_query_intent_routes_without_task_parser() -> None:
     parser = FakeParser({'title': 'Should not be parsed'})
-    graph = build_task_graph(GraphDependencies(parser=parser))
+    graph = build_task_graph(GraphDependencies(intent_service=existing_flow_intent_service(), parser=parser))
 
     result = await graph.ainvoke(initial_state('查询我今天的任务'))
 
-    assert result['intent'] == TaskIntent.QUERY_TASK.value
+    assert result['intent'] == IntentType.QUERY_TASKS.value
     assert result['final_response'] == 'Task repository is not configured'
     assert parser.calls == []
 
@@ -93,7 +94,7 @@ async def test_query_intent_routes_without_task_parser() -> None:
 @pytest.mark.anyio
 async def test_missing_title_routes_validation_error() -> None:
     parser = FakeParser({'description': 'No title'})
-    graph = build_task_graph(GraphDependencies(parser=parser))
+    graph = build_task_graph(GraphDependencies(intent_service=existing_flow_intent_service(), parser=parser))
 
     result = await graph.ainvoke(initial_state('创建一个任务'))
 
@@ -112,7 +113,7 @@ async def test_naive_deadline_routes_validation_error() -> None:
             'deadline': datetime(2026, 8, 7, 23, 59),
         }
     )
-    graph = build_task_graph(GraphDependencies(parser=parser))
+    graph = build_task_graph(GraphDependencies(intent_service=existing_flow_intent_service(), parser=parser))
 
     result = await graph.ainvoke(initial_state('创建一个任务'))
 
@@ -124,7 +125,7 @@ async def test_naive_deadline_routes_validation_error() -> None:
 @pytest.mark.anyio
 async def test_parser_exception_routes_to_handle_error() -> None:
     parser = FakeParser(error=RuntimeError('parser unavailable'))
-    graph = build_task_graph(GraphDependencies(parser=parser))
+    graph = build_task_graph(GraphDependencies(intent_service=existing_flow_intent_service(), parser=parser))
 
     result = await graph.ainvoke(initial_state('创建一个任务'))
 
@@ -133,7 +134,7 @@ async def test_parser_exception_routes_to_handle_error() -> None:
 
 
 def test_graph_contains_expected_nodes_and_edges() -> None:
-    graph = build_task_graph(GraphDependencies(parser=FakeParser()))
+    graph = build_task_graph(GraphDependencies(intent_service=existing_flow_intent_service(), parser=FakeParser()))
     representation = graph.get_graph()
 
     assert set(representation.nodes) == {
@@ -147,10 +148,13 @@ def test_graph_contains_expected_nodes_and_edges() -> None:
         'request_confirmation',
         'execute_create_task',
         'query_task_data',
-        'parse_task_reference',
         'resolve_task_reference',
         'prepare_status_update',
         'execute_status_update',
+        'request_intent_clarification',
+        'respond_feature_unavailable',
+        'respond_to_general_chat',
+        'respond_unknown_intent',
         '__end__',
     }
 
@@ -159,7 +163,11 @@ def test_graph_contains_expected_nodes_and_edges() -> None:
         ('__start__', 'classify_intent'),
         ('classify_intent', 'parse_task'),
         ('classify_intent', 'query_task_data'),
-        ('classify_intent', 'parse_task_reference'),
+        ('classify_intent', 'resolve_task_reference'),
+        ('classify_intent', 'request_intent_clarification'),
+        ('classify_intent', 'respond_feature_unavailable'),
+        ('classify_intent', 'respond_to_general_chat'),
+        ('classify_intent', 'respond_unknown_intent'),
         ('classify_intent', 'handle_error'),
         ('parse_task', 'validate_task'),
         ('parse_task', 'handle_error'),
@@ -178,8 +186,6 @@ def test_graph_contains_expected_nodes_and_edges() -> None:
         ('execute_create_task', 'handle_error'),
         ('query_task_data', '__end__'),
         ('query_task_data', 'handle_error'),
-        ('parse_task_reference', 'resolve_task_reference'),
-        ('parse_task_reference', 'handle_error'),
         ('resolve_task_reference', 'prepare_status_update'),
         ('resolve_task_reference', '__end__'),
         ('resolve_task_reference', 'handle_error'),
@@ -190,4 +196,8 @@ def test_graph_contains_expected_nodes_and_edges() -> None:
         ('execute_status_update', '__end__'),
         ('execute_status_update', 'handle_error'),
         ('handle_error', '__end__'),
+        ('request_intent_clarification', '__end__'),
+        ('respond_feature_unavailable', '__end__'),
+        ('respond_to_general_chat', '__end__'),
+        ('respond_unknown_intent', '__end__'),
     }.issubset(edges)

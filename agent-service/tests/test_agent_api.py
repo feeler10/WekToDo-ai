@@ -3,6 +3,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from app.core.config import Settings
 from app.graph.builder import GraphDependencies, build_task_graph
+from tests.intent_helpers import existing_flow_intent_service
 from app.main import create_app
 from app.services.agent import TaskAgentService
 from tests.test_human_in_the_loop import (
@@ -16,6 +17,7 @@ def _client() -> tuple[TestClient, InMemoryTaskRepository]:
     repository = InMemoryTaskRepository()
     graph = build_task_graph(
         GraphDependencies(
+            intent_service=existing_flow_intent_service(),
             parser=SequenceParser(_draft('API 创建任务')),
             task_repository=repository,
         ),

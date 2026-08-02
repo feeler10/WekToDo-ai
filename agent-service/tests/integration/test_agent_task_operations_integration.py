@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from redis.asyncio import Redis
 
 from app.graph.builder import GraphDependencies, build_task_graph
+from tests.intent_helpers import existing_flow_intent_service
 from app.repositories.redis_task import RedisTaskRepository
 from app.schemas.agent import AgentChatRequest, AgentConfirmRequest
 from app.schemas.task import Task, TaskStatus
@@ -41,6 +42,7 @@ async def test_agent_query_and_confirmed_update_use_real_redis_data() -> None:
     )
     graph = build_task_graph(
         GraphDependencies(
+            intent_service=existing_flow_intent_service(),
             parser=UnusedParser(),
             task_repository=repository,
             clock=lambda: datetime(2026, 8, 1, tzinfo=timezone.utc),

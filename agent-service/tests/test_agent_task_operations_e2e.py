@@ -7,6 +7,7 @@ from fakeredis.aioredis import FakeRedis
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.graph.builder import GraphDependencies, build_task_graph
+from tests.intent_helpers import existing_flow_intent_service
 from app.repositories.redis_task import RedisTaskRepository
 from app.schemas.agent import AgentChatRequest, AgentConfirmRequest, AgentResponse
 from app.schemas.task import Task, TaskQuery, TaskStatus
@@ -40,6 +41,7 @@ class Harness:
         )
         graph = build_task_graph(
             GraphDependencies(
+                intent_service=existing_flow_intent_service(),
                 parser=FixedParser(),
                 task_repository=self.repository,
                 clock=lambda: NOW,

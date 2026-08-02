@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 
@@ -7,7 +7,6 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.classifier import IntentClassifier, KeywordIntentClassifier
 from app.graph.nodes import (
     calculate_priority,
     classify_intent,
@@ -15,12 +14,15 @@ from app.graph.nodes import (
     execute_status_update,
     handle_error,
     parse_task,
-    parse_task_reference,
     prepare_confirmation,
     prepare_status_update,
     query_task_data,
     request_confirmation,
+    request_intent_clarification,
     resolve_task_reference,
+    respond_feature_unavailable,
+    respond_to_general_chat,
+    respond_unknown_intent,
     validate_task,
 )
 from app.graph.parser import TaskParser
@@ -32,11 +34,11 @@ from app.graph.routing import (
     route_after_preparation,
     route_after_priority,
     route_after_query,
-    route_after_task_reference_parsing,
     route_after_task_reference_resolution,
     route_after_validation,
 )
 from app.graph.state import TaskAgentState
+from app.intent.service import IntentRecognitionService
 from app.repositories.base import TaskRepository
 from app.schemas.task import utc_now
 
@@ -44,7 +46,7 @@ from app.schemas.task import utc_now
 @dataclass(frozen=True)
 class GraphDependencies:
     parser: TaskParser
-    classifier: IntentClassifier = field(default_factory=KeywordIntentClassifier)
+    intent_service: IntentRecognitionService
     task_repository: TaskRepository | None = None
     clock: Callable[[], datetime] = utc_now
 
@@ -57,7 +59,7 @@ def build_task_graph(
     builder = StateGraph(TaskAgentState)
     builder.add_node(
         'classify_intent',
-        partial(classify_intent, classifier=dependencies.classifier),
+        partial(classify_intent, service=dependencies.intent_service),
     )
     builder.add_node(
         'parse_task',
@@ -73,7 +75,6 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node('parse_task_reference', parse_task_reference)
     builder.add_node(
         'resolve_task_reference',
         partial(
@@ -99,6 +100,16 @@ def build_task_graph(
         ),
     )
     builder.add_node('handle_error', handle_error)
+    builder.add_node(
+        'request_intent_clarification',
+        request_intent_clarification,
+    )
+    builder.add_node('respond_to_general_chat', respond_to_general_chat)
+    builder.add_node(
+        'respond_feature_unavailable',
+        respond_feature_unavailable,
+    )
+    builder.add_node('respond_unknown_intent', respond_unknown_intent)
 
     builder.add_edge(START, 'classify_intent')
     builder.add_conditional_edges(
@@ -107,7 +118,11 @@ def build_task_graph(
         {
             'parse_task': 'parse_task',
             'query_task_data': 'query_task_data',
-            'parse_task_reference': 'parse_task_reference',
+            'resolve_task_reference': 'resolve_task_reference',
+            'request_intent_clarification': 'request_intent_clarification',
+            'respond_to_general_chat': 'respond_to_general_chat',
+            'respond_feature_unavailable': 'respond_feature_unavailable',
+            'respond_unknown_intent': 'respond_unknown_intent',
             'handle_error': 'handle_error',
         },
     )
@@ -117,14 +132,6 @@ def build_task_graph(
         {
             'handle_error': 'handle_error',
             'end': END,
-        },
-    )
-    builder.add_conditional_edges(
-        'parse_task_reference',
-        route_after_task_reference_parsing,
-        {
-            'resolve_task_reference': 'resolve_task_reference',
-            'handle_error': 'handle_error',
         },
     )
     builder.add_conditional_edges(
@@ -206,4 +213,8 @@ def build_task_graph(
         },
     )
     builder.add_edge('handle_error', END)
+    builder.add_edge('request_intent_clarification', END)
+    builder.add_edge('respond_to_general_chat', END)
+    builder.add_edge('respond_feature_unavailable', END)
+    builder.add_edge('respond_unknown_intent', END)
     return builder.compile(checkpointer=checkpointer)

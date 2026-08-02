@@ -10,6 +10,7 @@ class TaskAgentState(TypedDict, total=False):
 
     intent: str
     intent_confidence: float
+    intent_result: dict[str, Any]
 
     parsed_task: dict[str, Any] | None
     task_draft: dict[str, Any] | None

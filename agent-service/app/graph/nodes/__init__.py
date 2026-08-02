@@ -11,6 +11,12 @@ from app.graph.nodes.prepare_status_update import prepare_status_update
 from app.graph.nodes.query_tasks import query_task_data
 from app.graph.nodes.request_confirmation import request_confirmation
 from app.graph.nodes.resolve_task_reference import resolve_task_reference
+from app.graph.nodes.respond_to_intent import (
+    request_intent_clarification,
+    respond_feature_unavailable,
+    respond_to_general_chat,
+    respond_unknown_intent,
+)
 from app.graph.nodes.update_task_status import execute_status_update
 from app.graph.nodes.validate_task import validate_task
 
@@ -25,7 +31,11 @@ __all__ = [
     'prepare_status_update',
     'query_task_data',
     'request_confirmation',
+    'request_intent_clarification',
     'resolve_task_reference',
+    'respond_feature_unavailable',
+    'respond_to_general_chat',
+    'respond_unknown_intent',
     'execute_status_update',
     'validate_task',
 ]
