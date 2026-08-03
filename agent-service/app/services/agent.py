@@ -37,6 +37,7 @@ class TaskAgentService:
                 'This thread is waiting for confirmation'
             )
 
+        previous = snapshot.values or {}
         initial_state = {
             'user_id': request.user_id,
             'thread_id': request.thread_id,
@@ -44,6 +45,15 @@ class TaskAgentService:
             'timezone': request.timezone,
             'request_id': request.request_id,
             'intent_result': None,
+            'pending_route': None,
+            'pending_query_clarification': previous.get(
+                'pending_query_clarification'
+            ),
+            'pending_task_selection': previous.get(
+                'pending_task_selection'
+            ),
+            'intent': None,
+            'intent_confidence': 0,
             'task_draft': None,
             'parsed_task': None,
             'pending_action': None,
@@ -125,9 +135,9 @@ class TaskAgentService:
             status = 'awaiting_confirmation'
             pending_action = values.get('pending_action') or {}
             message = (
-                'Review the task status update'
+                '请确认任务状态更新'
                 if pending_action.get('action_type') == 'update_task_status'
-                else 'Review the task draft before creation'
+                else '请确认任务创建草稿'
             )
         elif intent_result.get('needs_clarification') is True:
             status = 'needs_clarification'
@@ -137,16 +147,16 @@ class TaskAgentService:
             message = str(final or error)
         elif created:
             status = 'completed'
-            message = str(final or 'Task created')
+            message = str(final or '任务已创建。')
         elif values.get('confirmation_status') == 'rejected':
             status = 'rejected'
-            message = str(final or 'Task operation rejected')
+            message = str(final or '已取消任务操作。')
         elif candidate_tasks:
             status = 'needs_disambiguation'
-            message = str(final or 'Multiple tasks matched')
+            message = str(final or '找到多个候选任务，请选择。')
         else:
             status = 'completed'
-            message = str(final or 'Request completed')
+            message = str(final or '请求已完成。')
 
         return AgentResponse(
             status=status,

@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -19,6 +19,9 @@ from app.graph.nodes import (
     query_task_data,
     request_confirmation,
     request_intent_clarification,
+    resolve_query_clarification,
+    resolve_task_selection,
+    route_pending_state,
     resolve_task_reference,
     respond_feature_unavailable,
     respond_to_general_chat,
@@ -28,6 +31,9 @@ from app.graph.nodes import (
 from app.graph.parser import TaskParser
 from app.graph.routing import (
     route_after_classification,
+    route_after_query_clarification,
+    route_after_task_selection,
+    route_from_pending_state,
     route_after_confirmation,
     route_after_execution,
     route_after_parsing,
@@ -52,6 +58,7 @@ class GraphDependencies:
     task_repository: TaskRepository | None = None
     clock: Callable[[], datetime] = utc_now
     task_matcher: TaskMatcher | None = None
+    pending_context_ttl_seconds: int = 900
 
 
 def build_task_graph(
@@ -61,6 +68,29 @@ def build_task_graph(
 ) -> CompiledStateGraph:
     builder = StateGraph(TaskAgentState)
     task_matcher = dependencies.task_matcher or create_task_matcher()
+    pending_ttl = timedelta(
+        seconds=dependencies.pending_context_ttl_seconds
+    )
+    builder.add_node(
+        'route_pending_state',
+        partial(route_pending_state, clock=dependencies.clock),
+    )
+    builder.add_node(
+        'resolve_query_clarification',
+        partial(
+            resolve_query_clarification,
+            service=dependencies.intent_service,
+            clock=dependencies.clock,
+        ),
+    )
+    builder.add_node(
+        'resolve_task_selection',
+        partial(
+            resolve_task_selection,
+            repository=dependencies.task_repository,
+            clock=dependencies.clock,
+        ),
+    )
     builder.add_node(
         'classify_intent',
         partial(
@@ -82,6 +112,7 @@ def build_task_graph(
             repository=dependencies.task_repository,
             clock=dependencies.clock,
             task_matcher=task_matcher,
+            pending_ttl=pending_ttl,
         ),
     )
     builder.add_node(
@@ -90,6 +121,8 @@ def build_task_graph(
             resolve_task_reference,
             repository=dependencies.task_repository,
             task_matcher=task_matcher,
+            clock=dependencies.clock,
+            pending_ttl=pending_ttl,
         ),
     )
     builder.add_node('prepare_status_update', prepare_status_update)
@@ -112,7 +145,11 @@ def build_task_graph(
     builder.add_node('handle_error', handle_error)
     builder.add_node(
         'request_intent_clarification',
-        request_intent_clarification,
+        partial(
+            request_intent_clarification,
+            clock=dependencies.clock,
+            pending_ttl=pending_ttl,
+        ),
     )
     builder.add_node('respond_to_general_chat', respond_to_general_chat)
     builder.add_node(
@@ -121,7 +158,43 @@ def build_task_graph(
     )
     builder.add_node('respond_unknown_intent', respond_unknown_intent)
 
-    builder.add_edge(START, 'classify_intent')
+    builder.add_edge(START, 'route_pending_state')
+    builder.add_conditional_edges(
+        'route_pending_state',
+        route_from_pending_state,
+        {
+            'classify_intent': 'classify_intent',
+            'resolve_task_selection': 'resolve_task_selection',
+            'resolve_query_clarification': 'resolve_query_clarification',
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'resolve_task_selection',
+        route_after_task_selection,
+        {
+            'classify_intent': 'classify_intent',
+            'prepare_status_update': 'prepare_status_update',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
+        'resolve_query_clarification',
+        route_after_query_clarification,
+        {
+            'classify_intent': 'classify_intent',
+            'parse_task': 'parse_task',
+            'query_task_data': 'query_task_data',
+            'resolve_task_reference': 'resolve_task_reference',
+            'request_intent_clarification': 'request_intent_clarification',
+            'respond_to_general_chat': 'respond_to_general_chat',
+            'respond_feature_unavailable': 'respond_feature_unavailable',
+            'respond_unknown_intent': 'respond_unknown_intent',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
     builder.add_conditional_edges(
         'classify_intent',
         route_after_classification,

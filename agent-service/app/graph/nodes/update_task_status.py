@@ -3,6 +3,7 @@ from app.repositories.base import TaskRepository
 from app.schemas.audit import PendingAction
 from app.schemas.task import TaskStatusUpdate
 from app.tools.task_tools import update_task_status
+from app.services.task_response import format_status_update_result
 
 
 async def execute_status_update(
@@ -32,6 +33,6 @@ async def execute_status_update(
     return {
         'updated_task': task.model_dump(mode='json'),
         'selected_task': task.model_dump(mode='json'),
-        'final_response': f'Task status updated to {task.status.value}: {task.title}',
+        'final_response': format_status_update_result(task),
         'error_message': None,
     }

@@ -41,8 +41,8 @@ class KeywordTaskMatcher(TaskMatcher):
             ),
             (
                 MatchKind.NORMALIZED_TITLE,
-                lambda task: _normalize(task.title)
-                == _normalize(stripped_reference),
+                lambda task: normalize_task_reference(task.title)
+                == normalize_task_reference(stripped_reference),
             ),
             (
                 MatchKind.KEYWORD,
@@ -75,7 +75,7 @@ class KeywordTaskMatcher(TaskMatcher):
         )
 
 
-def _normalize(value: str) -> str:
+def normalize_task_reference(value: str) -> str:
     normalized = _IGNORED_PUNCTUATION.sub('', value).casefold()
     for suffix in _REFERENCE_SUFFIXES:
         normalized_suffix = suffix.casefold()
@@ -88,8 +88,8 @@ def _normalize(value: str) -> str:
 
 
 def _is_keyword_match(reference: str, title: str) -> bool:
-    normalized_reference = _normalize(reference)
-    normalized_title = _normalize(title)
+    normalized_reference = normalize_task_reference(reference)
+    normalized_title = normalize_task_reference(title)
     if not normalized_reference or not normalized_title:
         return False
     return (
@@ -99,4 +99,4 @@ def _is_keyword_match(reference: str, title: str) -> bool:
 
 
 def _stable_task_key(task: Task) -> tuple[str, str]:
-    return (_normalize(task.title), task.id)
+    return (normalize_task_reference(task.title), task.id)

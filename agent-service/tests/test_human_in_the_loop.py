@@ -181,7 +181,7 @@ async def test_reject_ends_without_writing() -> None:
         config=config,
     )
 
-    assert rejected['final_response'] == 'Task creation rejected'
+    assert rejected['final_response'] == '已取消创建任务。'
     assert rejected['confirmation_status'] == 'rejected'
     assert repository.create_calls == 0
 

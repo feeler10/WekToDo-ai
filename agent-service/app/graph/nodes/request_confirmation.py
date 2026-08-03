@@ -46,9 +46,9 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
             update={'confirmation_status': 'rejected'}
         ).model_dump(mode='json')
         update['final_response'] = (
-            'Task status update rejected'
+            '已取消任务状态更新。'
             if pending.action_type == 'update_task_status'
-            else 'Task creation rejected'
+            else '已取消创建任务。'
         )
     elif decision.action == ConfirmationAction.EDIT:
         edits = decision.edits

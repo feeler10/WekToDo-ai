@@ -14,7 +14,7 @@ def prepare_status_update(state: TaskAgentState) -> dict[str, object]:
         if task.status == target:
             return {
                 'updated_task': task.model_dump(mode='json'),
-                'final_response': f'Task is already {target.value}: {task.title}',
+                'final_response': f'“{task.title}”已经是目标状态。',
                 'error_message': None,
             }
         confirmed_reopen = task.status == TaskStatus.DONE and target == TaskStatus.DOING

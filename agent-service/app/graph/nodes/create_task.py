@@ -25,6 +25,6 @@ async def execute_create_task(
 
     return {
         'created_task': task.model_dump(mode='json'),
-        'final_response': f'Task created: {task.title}',
+        'final_response': f'已创建任务“{task.title}”。',
         'error_message': None,
     }

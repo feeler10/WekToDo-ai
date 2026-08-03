@@ -8,6 +8,9 @@ from app.graph.nodes.parse_task import parse_task
 from app.graph.nodes.parse_task_reference import parse_task_reference
 from app.graph.nodes.prepare_confirmation import prepare_confirmation
 from app.graph.nodes.prepare_status_update import prepare_status_update
+from app.graph.nodes.resolve_query_clarification import resolve_query_clarification
+from app.graph.nodes.resolve_task_selection import resolve_task_selection
+from app.graph.nodes.route_pending_state import route_pending_state
 from app.graph.nodes.query_tasks import query_task_data
 from app.graph.nodes.request_confirmation import request_confirmation
 from app.graph.nodes.resolve_task_reference import resolve_task_reference
@@ -26,6 +29,9 @@ __all__ = [
     'execute_create_task',
     'handle_error',
     'parse_task',
+    'resolve_query_clarification',
+    'resolve_task_selection',
+    'route_pending_state',
     'parse_task_reference',
     'prepare_confirmation',
     'prepare_status_update',

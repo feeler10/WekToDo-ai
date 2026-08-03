@@ -67,6 +67,11 @@ agent-service/
 
 同时创建 `.gitignore`，更新现有 `.env.example` 和 `README.md`。阶段 1 不创建 `frontend/` 内容，也不创建 Redis、Graph、任务工具或领域服务实现。
 
+
+## 3.1 v0.1.2 查询上下文闭环
+
+阶段三复用现有 Redis Checkpointer 保存短期 `PendingQueryClarification` 与 `PendingTaskSelection`。查询补丁按字段确定性合并并重新执行阶段一完整性校验；多候选只保存候选 ID、版本和最小操作上下文，选择后按 `user_id + task_id` 重读 Redis。查询选择只读，状态更新选择后继续进入现有 PendingAction 确认链路。所有待处理状态绑定用户和线程、统一过期，并在完成、取消、新请求替换或不可恢复错误时清理。中文响应只格式化真实结构化数据，不查询仓储或调用 LLM。
+
 ## 4. 当前明确不实现
 
 - **P1**：任务拆解、批量子任务、父子进度、下一步推荐、SSE、完整工具日志和基础 Trace。

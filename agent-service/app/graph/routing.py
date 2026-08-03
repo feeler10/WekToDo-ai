@@ -4,6 +4,9 @@ from app.graph.state import TaskAgentState
 from app.intent.enums import IntentType
 
 Route = Literal[
+    'classify_intent',
+    'resolve_query_clarification',
+    'resolve_task_selection',
     'parse_task',
     'query_task_data',
     'request_intent_clarification',
@@ -24,6 +27,38 @@ Route = Literal[
     'handle_error',
     'end',
 ]
+
+def route_from_pending_state(state: TaskAgentState) -> Route:
+    route = state.get('pending_route')
+    if route == 'selection':
+        return 'resolve_task_selection'
+    if route == 'clarification':
+        return 'resolve_query_clarification'
+    if route == 'blocked':
+        return 'handle_error'
+    return 'classify_intent'
+
+
+def route_after_query_clarification(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    route = state.get('pending_route')
+    if route == 'classify':
+        return 'classify_intent'
+    if route == 'classified':
+        return route_after_classification(state)
+    return 'end'
+
+
+def route_after_task_selection(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    if state.get('pending_route') == 'classify':
+        return 'classify_intent'
+    if state.get('pending_route') == 'selected_update':
+        return 'prepare_status_update'
+    return 'end'
+
 
 
 def route_after_classification(state: TaskAgentState) -> Route:

@@ -39,3 +39,16 @@ def test_structured_output_method_rejects_unknown_value() -> None:
             llm_structured_output_method='xml',
             _env_file=None,
         )
+
+
+def test_pending_context_ttl_has_bounded_default() -> None:
+    settings = Settings(app_env='test', _env_file=None)
+
+    assert settings.pending_context_ttl_seconds == 900
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            pending_context_ttl_seconds=30,
+            _env_file=None,
+        )

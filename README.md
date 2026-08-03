@@ -85,9 +85,19 @@ API Key、Base URL 和结构化输出方式分别复用 `LLM_API_KEY`、`LLM_BAS
 
 ```env
 TASK_MATCHER_PROVIDER=keyword
+PENDING_CONTEXT_TTL_SECONDS=900
 ```
 
 `keyword` 按精确 ID、精确标题、规范化标题和关键词包含的顺序匹配，并始终限制当前 `user_id`。`vector`、`hybrid` 是保留配置，当前选择后会明确失败，不会静默降级。
+
+
+## v0.1.2 查询上下文闭环
+
+不完整列表查询和多候选任务会作为短期流程状态写入现有 LangGraph Checkpoint，并严格绑定 `user_id` 与 `thread_id`。处理优先级为待确认写操作、候选选择、查询澄清、普通意图识别。用户可以在下一轮补充时间范围，或使用序号、候选任务 ID、精确标题选择任务；完成、取消、替换或过期后会清理对应状态。
+
+查询补丁由确定性代码按字段合并，并重新运行阶段一完整性校验；执行仍使用阶段二 `TaskQueryPlan`。候选恢复只信任 Checkpoint 中的候选 ID 和最小上下文，选择后必须按当前用户重新读取 Redis，并校验任务版本与状态。查询选择保持只读；状态更新选择后仍需经过原有确认流程。
+
+任务列表、详情、零匹配、多候选和状态更新结果由确定性中文格式化层生成。任务事实只来自 Repository 返回的真实 `Task`，截止时间按请求业务时区显示，不使用 LLM 自由总结。短期状态默认 15 分钟过期，可通过 `PENDING_CONTEXT_TTL_SECONDS` 调整。
 
 ## 测试
 

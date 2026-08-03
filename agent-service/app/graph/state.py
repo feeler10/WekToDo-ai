@@ -11,6 +11,10 @@ class TaskAgentState(TypedDict, total=False):
     intent: str
     intent_confidence: float
     intent_result: dict[str, Any]
+    pending_route: str | None
+    pending_query_clarification: dict[str, Any] | None
+    pending_task_selection: dict[str, Any] | None
+
 
     parsed_task: dict[str, Any] | None
     task_draft: dict[str, Any] | None

@@ -44,6 +44,7 @@ def create_app(
                     repository = RedisTaskRepository(application.state.redis)
                     graph = build_task_graph(
                         GraphDependencies(
+                            pending_context_ttl_seconds=app_settings.pending_context_ttl_seconds,
                             parser=create_task_parser(app_settings),
                             intent_service=create_intent_service(app_settings),
                             task_repository=repository,

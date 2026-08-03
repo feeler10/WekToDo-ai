@@ -141,6 +141,9 @@ def test_graph_contains_expected_nodes_and_edges() -> None:
         '__start__',
         'classify_intent',
         'parse_task',
+        'route_pending_state',
+        'resolve_query_clarification',
+        'resolve_task_selection',
         'validate_task',
         'calculate_priority',
         'handle_error',
@@ -160,7 +163,13 @@ def test_graph_contains_expected_nodes_and_edges() -> None:
 
     edges = {(edge.source, edge.target) for edge in representation.edges}
     assert {
-        ('__start__', 'classify_intent'),
+        ('__start__', 'route_pending_state'),
+        ('route_pending_state', 'classify_intent'),
+        ('route_pending_state', 'resolve_query_clarification'),
+        ('route_pending_state', 'resolve_task_selection'),
+        ('resolve_task_selection', 'prepare_status_update'),
+        ('resolve_task_selection', '__end__'),
+        ('resolve_query_clarification', 'query_task_data'),
         ('classify_intent', 'parse_task'),
         ('classify_intent', 'query_task_data'),
         ('classify_intent', 'resolve_task_reference'),
