@@ -1,5 +1,5 @@
 <script setup lang='ts'>
-import type { Task, TaskStatus } from '../types/agent'
+import type { Task, TaskPriority, TaskStatus } from '../types/agent'
 
 defineProps<{
   tasks: Task[]
@@ -27,6 +27,20 @@ const statusColors: Record<TaskStatus, string> = {
   CANCELLED: 'error',
 }
 
+const priorityLabels: Record<TaskPriority, string> = {
+  URGENT: '紧急',
+  HIGH: '高优先级',
+  MEDIUM: '中优先级',
+  LOW: '低优先级',
+}
+
+const priorityColors: Record<TaskPriority, string> = {
+  URGENT: 'red',
+  HIGH: 'orange',
+  MEDIUM: 'blue',
+  LOW: 'default',
+}
+
 const transitions: Record<TaskStatus, TaskStatus[]> = {
   TODO: ['DOING', 'CANCELLED'],
   DOING: ['DONE', 'BLOCKED'],
@@ -50,6 +64,19 @@ function statusColor(task: Task) {
   return statusColors[task.status]
 }
 
+
+function priorityLabel(task: Task) {
+  return task.effective_priority
+    ? priorityLabels[task.effective_priority]
+    : null
+}
+function priorityColor(task: Task) {
+  return task.effective_priority
+    ? priorityColors[task.effective_priority]
+    : 'default'
+}
+
+
 function handleStatusChange(task: Task, value: unknown) {
   if (typeof value === 'string' && value in statusLabels) {
     emit('updateStatus', task, value as TaskStatus)
@@ -57,7 +84,12 @@ function handleStatusChange(task: Task, value: unknown) {
 }
 
 function formatDeadline(value: string | null) {
-  return value ? new Date(value).toLocaleString() : '无截止时间'
+  return value
+    ? `${new Date(value).toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour12: false,
+      })}（北京时间）`
+    : '无截止时间'
 }
 
 function refresh() {
@@ -81,9 +113,15 @@ function refresh() {
         <a-list-item class='task-item'>
           <div class='task-title-row'>
             <a-typography-text strong>{{ item.title }}</a-typography-text>
-            <a-tag :color='statusColor(item)'>
-              {{ statusLabel(item) }}
-            </a-tag>
+            <div class='task-tags'>
+              <a-tag
+                v-if='priorityLabel(item)'
+                :color='priorityColor(item)'
+              >{{ priorityLabel(item) }}</a-tag>
+              <a-tag :color='statusColor(item)'>
+                {{ statusLabel(item) }}
+              </a-tag>
+            </div>
           </div>
           <p class='task-meta'>{{ formatDeadline(item.deadline) }}</p>
           <a-select

@@ -1,5 +1,5 @@
 <script setup lang='ts'>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import type {
   AgentResponse,
@@ -35,6 +35,10 @@ const editForm = reactive<TaskDraftEdit>({
   estimated_minutes: draft.value?.estimated_minutes,
   user_priority: null,
 })
+const deadlineDate = ref<string>()
+const deadlineTime = ref<string>()
+const deadlineError = ref<string | null>(null)
+
 
 const priorityOptions: Array<{ label: string; value: TaskPriority }> = [
   { label: '紧急', value: 'URGENT' },
@@ -43,9 +47,123 @@ const priorityOptions: Array<{ label: string; value: TaskPriority }> = [
   { label: '低', value: 'LOW' },
 ]
 
+const priorityLabels: Record<TaskPriority, string> = {
+  URGENT: '紧急',
+  HIGH: '高',
+  MEDIUM: '中',
+  LOW: '低',
+}
+
+const selectedUserPriority = computed(() =>
+  asTaskPriority(pending.value?.payload.user_priority),
+)
+const displayedPriority = computed(
+  () =>
+    selectedUserPriority.value
+    || asTaskPriority(pending.value?.payload.ai_priority),
+)
+const displayedPriorityText = computed(() => {
+  const priority = displayedPriority.value
+  if (!priority) return '未设置'
+  const source = selectedUserPriority.value ? '用户设置' : 'AI 建议'
+  return `${priorityLabels[priority]}（${source}）`
+})
+
+function asTaskPriority(value: unknown): TaskPriority | null {
+  return typeof value === 'string' && value in priorityLabels
+    ? value as TaskPriority
+    : null
+}
+const displayedDeadline = computed(() => {
+  const deadline = draft.value?.deadline
+  if (!deadline) return null
+  const parsed = parseShanghaiDateTime(deadline)
+  return parsed
+    ? `${parsed.date} ${parsed.time}（北京时间）`
+    : deadline
+})
+
+watch([deadlineDate, deadlineTime], () => {
+  deadlineError.value = null
+})
+
+function parseShanghaiDateTime(value: string | null | undefined) {
+  const instant = value ? new Date(value) : new Date()
+  if (Number.isNaN(instant.getTime())) return null
+
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(instant)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  }
+}
+
+function startEditing() {
+  const currentDraft = draft.value
+  if (!currentDraft) return
+
+  editForm.title = currentDraft.title
+  editForm.description = currentDraft.description
+  editForm.category = currentDraft.category
+  editForm.deadline = currentDraft.deadline
+  editForm.estimated_minutes = currentDraft.estimated_minutes
+  editForm.user_priority = selectedUserPriority.value
+
+  const deadline = parseShanghaiDateTime(currentDraft.deadline)
+  deadlineDate.value = deadline?.date
+  deadlineTime.value = deadline?.time
+  deadlineError.value = null
+  editing.value = true
+}
+
+function buildShanghaiIso(date: string, time: string) {
+  return `${date}T${time}:00+08:00`
+}
+
+
 function submitEdit() {
   if (!editForm.title?.trim()) return
-  emit('action', 'edit', { edits: { ...editForm, title: editForm.title.trim() } })
+  if (!deadlineDate.value) {
+    deadlineError.value = '请选择截止日期'
+    return
+  }
+  if (!deadlineTime.value) {
+    deadlineError.value = '请选择截止时间'
+    return
+  }
+
+  const deadline = buildShanghaiIso(deadlineDate.value, deadlineTime.value)
+  const selectedTime = Date.parse(deadline)
+  const currentMinute = Math.floor(Date.now() / 60_000) * 60_000
+  if (Number.isNaN(selectedTime)) {
+    deadlineError.value = '截止时间格式无效，请重新选择'
+    return
+  }
+  if (selectedTime < currentMinute) {
+    deadlineError.value = '截止时间不能早于当前时间'
+    return
+  }
+
+  emit('action', 'edit', {
+    edits: {
+      ...editForm,
+      title: editForm.title.trim(),
+      deadline,
+    },
+  })
   editing.value = false
 }
 
@@ -89,11 +207,11 @@ function regenerate() {
         <a-descriptions-item v-if='draft.description' label='描述'>
           {{ draft.description }}
         </a-descriptions-item>
-        <a-descriptions-item v-if='draft.deadline' label='截止时间'>
-          {{ draft.deadline }}
+        <a-descriptions-item v-if='displayedDeadline' label='截止时间'>
+          {{ displayedDeadline }}
         </a-descriptions-item>
-        <a-descriptions-item label='建议优先级'>
-          {{ pending?.payload.ai_priority || '未设置' }}
+        <a-descriptions-item label='优先级'>
+          {{ displayedPriorityText }}
         </a-descriptions-item>
         <a-descriptions-item v-if='draft.estimated_minutes' label='预计耗时'>
           {{ draft.estimated_minutes }} 分钟
@@ -107,8 +225,29 @@ function regenerate() {
         <a-form-item label='描述'>
           <a-textarea v-model:value='editForm.description' :rows='2' />
         </a-form-item>
-        <a-form-item label='截止时间（ISO 8601，需含时区）'>
-          <a-input v-model:value='editForm.deadline' placeholder='2026-08-07T23:59:00+08:00' />
+        <a-form-item
+          label='截止时间（北京时间）'
+          required
+          :validate-status='deadlineError ? "error" : undefined'
+          :help='deadlineError || undefined'
+        >
+          <div class='deadline-fields'>
+            <a-date-picker
+              v-model:value='deadlineDate'
+              value-format='YYYY-MM-DD'
+              format='YYYY-MM-DD'
+              placeholder='选择日期'
+              @change='deadlineError = null'
+            />
+            <a-time-picker
+              v-model:value='deadlineTime'
+              value-format='HH:mm'
+              format='HH:mm'
+              :show-second='false'
+              placeholder='选择时间'
+              @change='deadlineError = null'
+            />
+          </div>
         </a-form-item>
         <a-form-item label='预计分钟'>
           <a-input-number v-model:value='editForm.estimated_minutes' :min='1' />
@@ -142,7 +281,7 @@ function regenerate() {
         <a-button
           v-if='!isStatusUpdate'
           :disabled='loading'
-          @click='editing = true'
+          @click='startEditing'
         >
           编辑
         </a-button>

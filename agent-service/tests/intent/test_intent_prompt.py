@@ -45,6 +45,8 @@ def test_prompt_injects_time_context_and_custom_range_contract() -> None:
     assert 'Week starts on: Monday' in system
     assert '昨天的昨天有什么规划' in system
     assert '未来三天有哪些未完成任务' in system
+    assert '最近五天有哪些任务' in system
+    assert '最近/近 N 天' in system
     assert '今年 8 月 5 日到 8 月 10 日有哪些任务' in system
     assert '明天下午有什么任务' in system
     assert 'raw_time_expression' in system

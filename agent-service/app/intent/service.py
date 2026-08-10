@@ -7,6 +7,7 @@ from app.intent.enums import IntentType
 from app.intent.exceptions import IntentRecognitionError
 from app.intent.models import IntentRecognitionContext, IntentResult
 from app.intent.query_validation import validate_query_completeness
+from app.intent.relative_time import normalize_upcoming_day_range
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,8 @@ class IntentRecognitionService:
         try:
             result = await self._classifier.classify(context)
             validated = IntentResult.model_validate(result)
-            return validate_query_completeness(validated, context)
+            normalized = normalize_upcoming_day_range(validated, context)
+            return validate_query_completeness(normalized, context)
         except (IntentRecognitionError, ValidationError) as exc:
             logger.warning('Intent recognition failed: %s', type(exc).__name__)
             return self._fallback_result()

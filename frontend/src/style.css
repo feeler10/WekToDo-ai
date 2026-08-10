@@ -87,6 +87,14 @@ input {
   margin-top: 2px;
 }
 
+.task-tags {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .session-info {
   gap: 8px;
 }
@@ -272,6 +280,16 @@ p {
   margin-bottom: 12px;
 }
 
+.deadline-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.55fr);
+  gap: 10px;
+}
+
+.deadline-fields .ant-picker {
+  width: 100%;
+}
+
 .agent-typing {
   display: flex;
   align-items: center;
@@ -385,5 +403,9 @@ p {
 
   .composer {
     margin-inline: 14px;
+  }
+
+  .deadline-fields {
+    grid-template-columns: 1fr;
   }
 }

@@ -47,6 +47,7 @@ INTENT_SYSTEM_PROMPT = '''你是任务管理系统中的意图识别模块。
 - CUSTOM 必须保留 raw_time_expression，并输出基于业务时区、带时区且完整的 start_at 和 end_at。
 - 所有区间使用左闭右开语义 start_at <= due_at < end_at。自然日结束使用下一自然日 00:00:00，不能使用 23:59:59。
 - “未来三天”按产品约定表示从今天开始、包含今天的三个自然日；“过去三个完整自然日”不包含今天；“最近 72 小时”表示相对当前时刻的连续 72 小时。
+- “最近/近 N 天”按产品约定表示从今天开始、包含今天的 N 个自然日，不得解释为向过去回溯。
 - “上午”按产品约定为 [00:00,12:00)，“下午”按产品约定为 [12:00,18:00)，均使用业务时区。
 - “前三天”“这几天”“最近一阵子”“月底前后”“过几天”“前段时间”等明显存在多种解释的表达不得猜测。保留 raw_time_expression，不生成未经确认的区间，并返回 AMBIGUOUS_TIME_EXPRESSION 及具体澄清问题。
 - CUSTOM 缺少端点或区间非法时返回 INVALID_TIME_RANGE；ALL 与 UNSPECIFIED 即使都没有端点也必须按 time_scope 区分。
@@ -62,6 +63,7 @@ INTENT_SYSTEM_PROMPT = '''你是任务管理系统中的意图识别模块。
 - 时间计算示例仅展示算法，实际必须使用注入的运行时上下文。若 Current datetime=2026-08-02T23:30:00+08:00：
   - “昨天的昨天有什么规划” -> QUERY_TASKS，query.time_scope=CUSTOM，query.raw_time_expression=昨天的昨天，query.start_at=2026-07-31T00:00:00+08:00，query.end_at=2026-08-01T00:00:00+08:00，needs_clarification=false。
   - “未来三天有哪些未完成任务” -> QUERY_TASKS，query.time_scope=CUSTOM，query.raw_time_expression=未来三天，query.statuses=[TODO,DOING,BLOCKED]，query.start_at=2026-08-02T00:00:00+08:00，query.end_at=2026-08-05T00:00:00+08:00，needs_clarification=false。
+  - “最近五天有哪些任务” -> QUERY_TASKS，query.time_scope=CUSTOM，query.raw_time_expression=最近五天，query.start_at=2026-08-02T00:00:00+08:00，query.end_at=2026-08-07T00:00:00+08:00，needs_clarification=false。
   - “今年 8 月 5 日到 8 月 10 日有哪些任务” -> QUERY_TASKS，query.time_scope=CUSTOM，query.raw_time_expression=今年 8 月 5 日到 8 月 10 日，query.start_at=2026-08-05T00:00:00+08:00，query.end_at=2026-08-11T00:00:00+08:00，needs_clarification=false。
   - “明天下午有什么任务” -> QUERY_TASKS，query.time_scope=CUSTOM，query.raw_time_expression=明天下午，query.start_at=2026-08-03T12:00:00+08:00，query.end_at=2026-08-03T18:00:00+08:00，needs_clarification=false。
 - “前三天有什么任务” -> QUERY_TASKS，query.time_scope=CUSTOM，query.raw_time_expression=前三天，query.start_at=null，query.end_at=null，needs_clarification=true，clarification_reason=AMBIGUOUS_TIME_EXPRESSION，clarification_question=你说的“前三天”是指过去三个完整自然日，还是包括今天在内的最近三天？

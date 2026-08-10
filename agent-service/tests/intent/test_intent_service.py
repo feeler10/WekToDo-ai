@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from app.intent.enums import IntentType, TimeScope
@@ -71,3 +74,73 @@ async def test_unexpected_programming_error_is_not_swallowed() -> None:
 
     with pytest.raises(RuntimeError, match='bug'):
         await service.recognize(IntentRecognitionContext(message='创建任务'))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('message', ['最近五天的任务', '近5天有哪些任务'])
+async def test_service_normalizes_recent_days_as_upcoming_calendar_days(
+    message: str,
+) -> None:
+    provider_result = IntentResult(
+        intent=IntentType.QUERY_TASKS,
+        confidence=0.9,
+        reason='用户正在查询最近几天的任务',
+        query=TaskQueryIntent(
+            time_scope=TimeScope.CUSTOM,
+            start_at=datetime.fromisoformat('2026-07-31T00:00:00+08:00'),
+            end_at=datetime.fromisoformat('2026-08-05T00:00:00+08:00'),
+            raw_time_expression='最近五天',
+        ),
+    )
+    service = IntentRecognitionService(FakeIntentClassifier(provider_result))
+
+    result = await service.recognize(
+        IntentRecognitionContext(
+            message=message,
+            current_datetime=datetime.fromisoformat(
+                '2026-08-04T16:30:00+08:00'
+            ),
+            business_timezone='Asia/Shanghai',
+        )
+    )
+
+    assert result.query is not None
+    assert result.query.start_at == datetime(
+        2026, 8, 4, tzinfo=ZoneInfo('Asia/Shanghai')
+    )
+    assert result.query.end_at == datetime(
+        2026, 8, 9, tzinfo=ZoneInfo('Asia/Shanghai')
+    )
+    assert result.needs_clarification is False
+
+
+@pytest.mark.anyio
+async def test_service_does_not_rewrite_explicit_past_days() -> None:
+    start = datetime.fromisoformat('2026-07-30T00:00:00+08:00')
+    end = datetime.fromisoformat('2026-08-04T00:00:00+08:00')
+    provider_result = IntentResult(
+        intent=IntentType.QUERY_TASKS,
+        confidence=0.9,
+        reason='用户正在查询过去的任务',
+        query=TaskQueryIntent(
+            time_scope=TimeScope.CUSTOM,
+            start_at=start,
+            end_at=end,
+            raw_time_expression='过去五天',
+        ),
+    )
+    service = IntentRecognitionService(FakeIntentClassifier(provider_result))
+
+    result = await service.recognize(
+        IntentRecognitionContext(
+            message='过去五天的任务',
+            current_datetime=datetime.fromisoformat(
+                '2026-08-04T16:30:00+08:00'
+            ),
+            business_timezone='Asia/Shanghai',
+        )
+    )
+
+    assert result.query is not None
+    assert result.query.start_at == start
+    assert result.query.end_at == end
