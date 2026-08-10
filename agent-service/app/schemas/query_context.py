@@ -78,6 +78,7 @@ class PendingTaskSelection(BaseModel):
     query_plan: dict[str, Any] | None = None
     reference: str = Field(min_length=1, max_length=200)
     target_status: TaskStatus | None = None
+    task_update_message: str | None = Field(default=None, max_length=2000)
     created_at: AwareDatetime
     expires_at: AwareDatetime
 
@@ -94,6 +95,7 @@ class PendingTaskSelection(BaseModel):
     def validate_pending_selection(self) -> 'PendingTaskSelection':
         allowed = {
             IntentType.QUERY_TASKS,
+            IntentType.UPDATE_TASK,
             IntentType.UPDATE_TASK_STATUS,
         }
         if self.operation not in allowed:
@@ -109,6 +111,15 @@ class PendingTaskSelection(BaseModel):
                 raise ValueError('target_status is required for status update')
             if self.query_plan is not None:
                 raise ValueError('status update cannot carry query_plan')
+            if self.task_update_message is not None:
+                raise ValueError('status update cannot carry task_update_message')
+        elif self.operation == IntentType.UPDATE_TASK:
+            if not self.task_update_message:
+                raise ValueError(
+                    'task_update_message is required for task attribute update'
+                )
+            if self.query_plan is not None:
+                raise ValueError('task update cannot carry query_plan')
         elif self.target_status is not None:
             raise ValueError('query selection cannot carry target_status')
         if self.expires_at <= self.created_at:

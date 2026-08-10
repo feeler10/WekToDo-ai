@@ -1,7 +1,7 @@
 <script setup lang='ts'>
 import { ref } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   disabled?: boolean
 }>()
@@ -13,10 +13,11 @@ const emit = defineEmits<{
 const message = ref('')
 
 function submit() {
+  if (props.disabled || props.loading) return
   const value = message.value.trim()
   if (!value) return
-  emit('send', value)
   message.value = ''
+  emit('send', value)
 }
 </script>
 

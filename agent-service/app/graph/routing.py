@@ -8,6 +8,7 @@ Route = Literal[
     'resolve_query_clarification',
     'resolve_task_selection',
     'parse_task',
+    'parse_task_update',
     'query_task_data',
     'request_intent_clarification',
     'respond_to_general_chat',
@@ -20,7 +21,9 @@ Route = Literal[
     'request_confirmation',
     'execute_create_task',
     'execute_status_update',
+    'execute_task_update',
     'prepare_status_update',
+    'prepare_task_update',
     'edit',
     'regenerate',
     'reject',
@@ -57,6 +60,8 @@ def route_after_task_selection(state: TaskAgentState) -> Route:
         return 'classify_intent'
     if state.get('pending_route') == 'selected_update':
         return 'prepare_status_update'
+    if state.get('pending_route') == 'selected_attribute_update':
+        return 'parse_task_update'
     return 'end'
 
 
@@ -73,10 +78,9 @@ def route_after_classification(state: TaskAgentState) -> Route:
         return 'query_task_data'
     if state.get('intent') == IntentType.UPDATE_TASK_STATUS.value:
         return 'resolve_task_reference'
-    if state.get('intent') in {
-        IntentType.UPDATE_TASK.value,
-        IntentType.DECOMPOSE_TASK.value,
-    }:
+    if state.get('intent') == IntentType.UPDATE_TASK.value:
+        return 'resolve_task_reference'
+    if state.get('intent') == IntentType.DECOMPOSE_TASK.value:
         return 'respond_feature_unavailable'
     if state.get('intent') == IntentType.GENERAL_CHAT.value:
         return 'respond_to_general_chat'
@@ -93,8 +97,18 @@ def route_after_task_reference_resolution(state: TaskAgentState) -> Route:
     if state.get('error_message'):
         return 'handle_error'
     if state.get('selected_task'):
+        if state.get('intent') == IntentType.UPDATE_TASK.value:
+            return 'parse_task_update'
         return 'prepare_status_update'
     return 'end'
+
+
+def route_after_task_update_parsing(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    if not state.get('task_update'):
+        return 'end'
+    return 'prepare_task_update'
 
 
 def route_after_parsing(state: TaskAgentState) -> Route:
@@ -131,6 +145,8 @@ def route_after_confirmation(state: TaskAgentState) -> Route:
         pending = state.get('pending_action') or {}
         if pending.get('action_type') == 'update_task_status':
             return 'execute_status_update'
+        if pending.get('action_type') == 'update_task':
+            return 'execute_task_update'
         return 'execute_create_task'
     if action == 'edit':
         return 'edit'

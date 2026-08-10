@@ -19,6 +19,56 @@
 
 - Graph 新消息路由按 PendingAction、候选选择、查询澄清和普通意图识别排序。
 
+## [0.1.4] - 2026-08-10
+
+### Added
+
+- 开放 `UPDATE_TASK` 对话式任务属性修改流程，支持标题、描述、分类、截止时间、预计耗时和用户优先级。
+- 新增独立的任务属性结构化解析器，结合 Redis 当前任务、业务时区和当前时间生成最小字段操作列表。
+- 新增 `SET`、`CLEAR` 字段操作契约，区分“未提及字段”和“主动清空字段”，支持取消截止时间及恢复 AI 推荐优先级。
+- 新增 `parse_task_update`、`prepare_task_update` 和 `execute_task_update` LangGraph 节点。
+- 新增属性修改前后值预览、Human-in-the-loop 确认和前端专用确认卡。
+- 新增多候选任务属性修改恢复，选择候选后继续使用第一轮原始修改指令。
+- 新增普通属性更新 Repository 与 Tool 接口。
+
+### Changed
+
+- 意图识别 Prompt 增加 `UPDATE_TASK` 与查询、取消任务、状态修改之间的边界规则。
+- `PendingTaskSelection` 支持任务属性修改操作并保存原始修改消息。
+- Redis 属性写入使用 `WATCH/MULTI/EXEC`、`expected_version` 和 `update_task:{request_id}` 幂等键。
+- 用户修改优先级时只写入 `user_priority`，由任务实体重新计算 `effective_priority` 和 `priority_source`。
+- 真实 Redis 与 Checkpoint 集成测试默认改用 IPv6 回环地址 `[::1]`；普通任务数据使用 DB 15，Checkpointer 使用 DB 0。
+- 前端属性修改确认卡只提供确认和取消，不允许绕过专用解析流程进行编辑或重新生成。
+
+### Fixed
+
+- 修复同名任务选择后，属性解析器错误地把“第一个”等候选选择消息当作修改指令的问题。
+- 修复清空任务描述时写入 `null` 与任务实体字符串约束冲突的问题，统一转换为空字符串。
+- 修复点击发送后聊天输入框不清空的问题；提交顺序调整为先清空本地输入值，再触发异步发送。
+- 修复属性修改待确认动作在前端被错误显示为“确认创建任务”的问题。
+
+### Security
+
+- 属性修改仅允许 `title`、`description`、`category`、`deadline`、`estimated_minutes` 和 `user_priority` 白名单字段。
+- 禁止通过属性修改流程写入任务状态、归属、AI 优先级、有效优先级、紧急度、进度、版本和审计时间字段。
+- 候选选择后按 `user_id + task_id` 重新读取 Redis，并在确认写入时再次执行归属、版本和幂等校验。
+- 未确认、解析歧义、版本冲突或幂等输入不一致时不执行任务写入。
+
+### Tests
+
+- 新增字段操作 Schema、字段清空、属性修改确认、Redis 幂等更新、解析澄清和多候选原始消息恢复测试。
+- 后端完整测试结果：`248 passed`，包括基于 IPv6 Redis 的 6 项真实 Redis/Checkpoint 集成测试。
+- 前端 `npm run typecheck` 与 `npm run build` 均通过。
+
+### 未完成内容
+
+- 属性修改解析器能够返回澄清问题，但尚未像查询澄清一样把属性补丁与缺失字段保存到 Checkpoint；用户需要重新发送包含完整修改信息的请求。
+- `CANCELLED` 当前仍是不可恢复的终止状态，尚未实现“重新启用已取消任务”的二次确认流程。
+- 非法状态流转仍可能向前端暴露英文内部异常，尚未统一转换为面向用户的中文提示。
+- 普通属性修改暂不支持 `actual_minutes`、`progress`、父子关系和依赖关系；任务状态继续由独立的 `UPDATE_TASK_STATUS` 流程处理。
+- 属性解析 Prompt 已通过 Fake/结构化数据测试，但尚未增加真实模型的版本化回归数据集和自动评测。
+- 任务拆解、批量子任务、下一步推荐、Milvus 长期记忆、每日简报和动态重新规划仍未实现。
+
 ## [0.1.3] - 2026-08-04
 
 ### Fixed
@@ -38,28 +88,6 @@
 - 新增“最近五天”“近5天”未来自然日范围及“过去五天”不被改写的回归测试。
 - 后端非 Redis 集成测试结果：`235 passed`。
 - 前端 `npm run typecheck` 与 `npm run build` 均通过。
-
-## [0.1.1] - 2026-08-02
-
-### Added
-
-- 增加可插拔意图识别模块。
-- 增加 LLMIntentClassifier 和 FakeIntentClassifier。
-- 增加 qwen-flash 结构化输出支持。
-- 增加意图评测数据集和真实模型验证脚本。
-- 增加意图识别代码快速入门文档。
-
-### Changed
-
-- LangGraph 使用 IntentRecognitionService 替换关键词分类器。
-- 查询、创建、状态更新、澄清和普通对话按 IntentResult 路由。
-- 模型客户端通过统一工厂创建。
-
-### Known Limitations
-
-- 查询节点尚未充分使用 IntentResult.task_reference。
-- GENERAL_CHAT 当前只返回固定能力提示。
-- UPDATE_TASK 和 DECOMPOSE_TASK 业务功能尚未开放。
 
 ## [0.1.2] - 2026-08-03
 
@@ -109,3 +137,25 @@
 - 新增阶段三查询交互端到端测试。
 - 新增查询上下文 Redis Checkpoint 恢复测试。
 - 完整测试结果：`238 passed`。
+
+## [0.1.1] - 2026-08-02
+
+### Added
+
+- 增加可插拔意图识别模块。
+- 增加 LLMIntentClassifier 和 FakeIntentClassifier。
+- 增加 qwen-flash 结构化输出支持。
+- 增加意图评测数据集和真实模型验证脚本。
+- 增加意图识别代码快速入门文档。
+
+### Changed
+
+- LangGraph 使用 IntentRecognitionService 替换关键词分类器。
+- 查询、创建、状态更新、澄清和普通对话按 IntentResult 路由。
+- 模型客户端通过统一工厂创建。
+
+### Known Limitations
+
+- 查询节点尚未充分使用 IntentResult.task_reference。
+- GENERAL_CHAT 当前只返回固定能力提示。
+- UPDATE_TASK 和 DECOMPOSE_TASK 业务功能尚未开放。

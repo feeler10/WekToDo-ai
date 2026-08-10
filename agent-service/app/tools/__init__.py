@@ -4,6 +4,7 @@ from app.tools.task_tools import (
     get_task_detail,
     get_today_tasks,
     query_tasks,
+    update_task,
     update_task_status,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     'get_task_detail',
     'get_today_tasks',
     'query_tasks',
+    'update_task',
     'update_task_status',
 ]

@@ -45,7 +45,11 @@ def _state(message: str) -> dict[str, str]:
             IntentType.GENERAL_CHAT,
             '你好！我可以帮你创建、查询、修改、完成或拆解任务。',
         ),
-        (IntentType.UPDATE_TASK, '任务属性修改功能暂未开放。'),
+        (
+            IntentType.UPDATE_TASK,
+            'Task reference resolution failed: '
+            'repository must not be accessed: list_tasks',
+        ),
         (IntentType.DECOMPOSE_TASK, '任务拆解功能暂未开放。'),
     ],
 )

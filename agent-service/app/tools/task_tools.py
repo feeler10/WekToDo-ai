@@ -9,6 +9,7 @@ from app.schemas.task import (
     TaskListResponse,
     TaskQuery,
     TaskStatus,
+    TaskUpdate,
     utc_now,
 )
 
@@ -120,5 +121,29 @@ async def update_task_status(
         target_status=target_status,
         expected_version=expected_version,
         confirmed_reopen=confirmed_reopen,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def update_task(
+    *,
+    repository: TaskRepository,
+    user_id: str,
+    task_id: str,
+    update: TaskUpdate | dict[str, object],
+    idempotency_key: str,
+    confirmed: bool,
+) -> Task:
+    if not confirmed:
+        raise PermissionError('update_task requires user confirmation')
+    if not idempotency_key:
+        raise ValueError('idempotency_key must not be empty')
+    task_update = TaskUpdate.model_validate(update)
+    if task_update.user_id != user_id:
+        raise ValueError('Task update user_id does not match request user_id')
+    return await repository.update(
+        user_id=user_id,
+        task_id=task_id,
+        update=task_update,
         idempotency_key=idempotency_key,
     )

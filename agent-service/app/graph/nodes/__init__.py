@@ -5,9 +5,11 @@ from app.graph.nodes.classify_intent import classify_intent
 from app.graph.nodes.create_task import execute_create_task
 from app.graph.nodes.handle_error import handle_error
 from app.graph.nodes.parse_task import parse_task
+from app.graph.nodes.parse_task_update import parse_task_update
 from app.graph.nodes.parse_task_reference import parse_task_reference
 from app.graph.nodes.prepare_confirmation import prepare_confirmation
 from app.graph.nodes.prepare_status_update import prepare_status_update
+from app.graph.nodes.prepare_task_update import prepare_task_update
 from app.graph.nodes.resolve_query_clarification import resolve_query_clarification
 from app.graph.nodes.resolve_task_selection import resolve_task_selection
 from app.graph.nodes.route_pending_state import route_pending_state
@@ -21,6 +23,7 @@ from app.graph.nodes.respond_to_intent import (
     respond_unknown_intent,
 )
 from app.graph.nodes.update_task_status import execute_status_update
+from app.graph.nodes.update_task import execute_task_update
 from app.graph.nodes.validate_task import validate_task
 
 __all__ = [
@@ -29,12 +32,14 @@ __all__ = [
     'execute_create_task',
     'handle_error',
     'parse_task',
+    'parse_task_update',
     'resolve_query_clarification',
     'resolve_task_selection',
     'route_pending_state',
     'parse_task_reference',
     'prepare_confirmation',
     'prepare_status_update',
+    'prepare_task_update',
     'query_task_data',
     'request_confirmation',
     'request_intent_clarification',
@@ -43,5 +48,6 @@ __all__ = [
     'respond_to_general_chat',
     'respond_unknown_intent',
     'execute_status_update',
+    'execute_task_update',
     'validate_task',
 ]

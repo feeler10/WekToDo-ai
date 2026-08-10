@@ -2,7 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.intent.enums import ClarificationReason, TimeScope
-from app.schemas.task import Task, TaskPriority, TaskStatus
+from app.schemas.task import Task, TaskPriority, TaskStatus, TaskUpdate
 from app.services.task_query_plan import TaskQueryPlan
 
 
@@ -146,6 +146,53 @@ def format_stale_candidate_response() -> str:
 
 def format_status_update_result(task: Task) -> str:
     return f'已将“{task.title}”更新为“{STATUS_LABELS[task.status]}”。'
+
+
+def format_task_update_preview(
+    task: Task,
+    update: TaskUpdate,
+    *,
+    timezone_name: str,
+) -> str:
+    labels = {
+        'title': '标题',
+        'description': '描述',
+        'category': '分类',
+        'deadline': '截止时间',
+        'estimated_minutes': '预计耗时',
+        'user_priority': '用户优先级',
+    }
+    changes = update.model_dump(
+        exclude_unset=True,
+        exclude={'user_id', 'expected_version'},
+    )
+    lines = [f'准备修改任务“{task.title}”：']
+    for field, value in changes.items():
+        old_value = getattr(task, field)
+        lines.append(
+            f'- {labels[field]}：{_format_update_value(field, old_value, timezone_name)}'
+            f' → {_format_update_value(field, value, timezone_name)}'
+        )
+    lines.append('请确认是否执行。')
+    return '\n'.join(lines)
+
+
+def format_task_update_result(task: Task) -> str:
+    return f'已更新任务“{task.title}”的属性。'
+
+
+def _format_update_value(field: str, value: object, timezone_name: str) -> str:
+    if value is None:
+        return '未设置'
+    if field == 'deadline':
+        assert isinstance(value, datetime)
+        return _format_datetime(value, timezone_name)
+    if field == 'estimated_minutes':
+        return f'{value} 分钟'
+    if field == 'user_priority':
+        priority = value if isinstance(value, TaskPriority) else TaskPriority(value)
+        return PRIORITY_LABELS[priority]
+    return str(value)
 
 
 def _format_task_line(task: Task, timezone_name: str) -> str:

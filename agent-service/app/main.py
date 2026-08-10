@@ -14,7 +14,10 @@ from app.intent.factory import create_intent_service
 from app.matching.factory import create_task_matcher
 from app.repositories.redis_task import RedisTaskRepository
 from app.services.agent import TaskAgentService
-from app.services.parser_factory import create_task_parser
+from app.services.parser_factory import (
+    create_task_parser,
+    create_task_update_parser,
+)
 
 
 def create_app(
@@ -46,6 +49,9 @@ def create_app(
                         GraphDependencies(
                             pending_context_ttl_seconds=app_settings.pending_context_ttl_seconds,
                             parser=create_task_parser(app_settings),
+                            task_update_parser=create_task_update_parser(
+                                app_settings
+                            ),
                             intent_service=create_intent_service(app_settings),
                             task_repository=repository,
                             task_matcher=create_task_matcher(

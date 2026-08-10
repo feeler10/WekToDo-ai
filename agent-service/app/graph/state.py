@@ -43,6 +43,9 @@ class TaskAgentState(TypedDict, total=False):
     candidate_tasks: list[dict[str, Any]]
     selected_task: dict[str, Any] | None
     updated_task: dict[str, Any] | None
+    task_update_result: dict[str, Any] | None
+    task_update: dict[str, Any] | None
+    task_update_message: str | None
 
     final_response: str | None
     error_message: str | None

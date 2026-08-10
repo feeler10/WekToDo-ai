@@ -159,6 +159,17 @@ async def resolve_task_selection(
             'error_message': None,
         }
 
+    if pending.operation == IntentType.UPDATE_TASK:
+        return {
+            'pending_task_selection': None,
+            'candidate_tasks': [],
+            'selected_task': serialized,
+            'task_update_message': pending.task_update_message,
+            'pending_route': 'selected_attribute_update',
+            'final_response': None,
+            'error_message': None,
+        }
+
     assert pending.target_status is not None
     confirmed_reopen = (
         selected.status.value == 'DONE'

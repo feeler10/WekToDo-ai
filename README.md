@@ -81,6 +81,8 @@ API Key、Base URL 和结构化输出方式分别复用 `LLM_API_KEY`、`LLM_BAS
 
 同一 chat 接口也支持任务查询和状态更新。查询示例包括“查询我的任务”“今天有哪些任务”“有哪些逾期任务”和“查看论文实验详情”，查询结果直接返回 `tasks`，无需确认。状态更新示例为“把论文实验标记为进行中”；唯一匹配时返回待确认动作，同名或模糊匹配多个任务时返回 `candidates` 及任务 ID。确认后才会写入 Redis。
 
+任务属性修改同样通过 chat 接口发起，例如“把论文任务改名为最终实验，截止到周五，优先级设为紧急”。当前支持标题、描述、分类、截止时间、预计耗时和用户优先级；唯一匹配后由专用结构化解析器生成最小补丁，经确认后使用 Redis 版本校验和幂等键写入。取消截止时间或恢复 AI 推荐优先级会清空相应用户设置，状态修改仍走独立的 `UPDATE_TASK_STATUS` 流程。
+
 任务引用默认使用可解释的关键词匹配器：
 
 ```env
@@ -103,10 +105,22 @@ PENDING_CONTEXT_TTL_SECONDS=900
 
 ```powershell
 conda activate langchain
-python -m pytest agent-service/tests
+python -m pytest agent-service/tests -m 'not integration'
 ```
 
-默认测试全部使用 Fake、Stub 或 Mock，不调用真实模型和外部网络。若要显式执行真实模型评测，请先配置 `.env` 中的模型访问参数，再从仓库根目录运行：
+上述测试使用 Fake、Stub、Mock 或内存实现，不调用真实模型和外部服务。
+
+本机 Redis 通过 IPv6 回环地址提供服务时，可运行真实 Redis 与 Checkpoint 集成测试：
+
+```powershell
+$env:TEST_REDIS_URL='redis://[::1]:6379/15'
+$env:TEST_CHECKPOINT_REDIS_URL='redis://[::1]:6379/0'
+python -m pytest agent-service/tests/integration
+```
+
+真实任务数据测试使用 Redis DB 15，Checkpointer 按约束使用 DB 0。
+
+若要显式执行真实模型评测，请先配置 `.env` 中的模型访问参数，再从仓库根目录运行：
 
 ```powershell
 conda activate langchain
@@ -125,4 +139,4 @@ npm run build
 
 ## 当前状态
 
-Milestone 7 已加入最小 Vue 对话页、任务确认卡、简单任务列表和确认式状态更新。前端直接使用现有 Agent API，未修改后端契约。意图识别已迁移为可配置的结构化输出模块；属性修改和任务拆解目前会返回“功能暂未开放”。Rule/Semantic/Hybrid Provider、向量检索、多意图拆分、可靠指代消解、复杂参数提取、自动样例学习、Milvus、每日简报、动态规划和复杂仪表盘仍未实现。
+Milestone 7 已加入最小 Vue 对话页、任务确认卡、简单任务列表、确认式状态更新和确认式属性修改。前端直接使用现有 Agent API。意图识别已迁移为可配置的结构化输出模块；任务拆解目前仍会返回“功能暂未开放”。Rule/Semantic/Hybrid Provider、向量检索、多意图拆分、可靠指代消解、自动样例学习、Milvus、每日简报、动态规划和复杂仪表盘仍未实现。

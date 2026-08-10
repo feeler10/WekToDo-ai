@@ -72,6 +72,14 @@ agent-service/
 
 阶段三复用现有 Redis Checkpointer 保存短期 `PendingQueryClarification` 与 `PendingTaskSelection`。查询补丁按字段确定性合并并重新执行阶段一完整性校验；多候选只保存候选 ID、版本和最小操作上下文，选择后按 `user_id + task_id` 重读 Redis。查询选择只读，状态更新选择后继续进入现有 PendingAction 确认链路。所有待处理状态绑定用户和线程、统一过期，并在完成、取消、新请求替换或不可恢复错误时清理。中文响应只格式化真实结构化数据，不查询仓储或调用 LLM。
 
+## 3.2 v0.1.3 对话式任务属性修改
+
+在现有 `UPDATE_TASK` 意图、关键词任务匹配、PendingAction 与 Redis 乐观并发控制基础上，增加对话式普通属性修改闭环。第一阶段仅允许修改 `title`、`description`、`category`、`deadline`、`estimated_minutes` 和 `user_priority`；状态继续由 `UPDATE_TASK_STATUS` 独立处理，禁止修改 ID、归属、AI 优先级、有效优先级、紧急度、进度、版本和审计时间字段。
+
+属性修改采用独立结构化解析器：意图识别只确定 `UPDATE_TASK` 和任务引用，从 Redis 唯一定位任务后，解析器结合当前任务、业务时区和当前时间生成最小字段操作列表。多候选状态保留原始修改语句，用户选择后重新按 `user_id + task_id` 读取并校验版本。所有补丁经过 Pydantic 白名单校验、前后值预览和 Interrupt 确认，再使用 `WATCH/MULTI/EXEC`、`expected_version` 与 `update_task:{request_id}` 幂等键写入 Redis。
+
+验收覆盖标题、截止时间、优先级、多字段修改、字段清空、解析澄清、多候选恢复、拒绝、重复请求、版本冲突和用户隔离；基础 Vue 确认卡只允许确认或取消属性修改。
+
 ## 4. 当前明确不实现
 
 - **P1**：任务拆解、批量子任务、父子进度、下一步推荐、SSE、完整工具日志和基础 Trace。

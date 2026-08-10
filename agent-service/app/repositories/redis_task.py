@@ -19,6 +19,7 @@ from app.schemas.task import (
     TaskListResponse,
     TaskQuery,
     TaskStatus,
+    TaskUpdate,
     utc_now,
 )
 from app.services.task_state import (
@@ -101,6 +102,109 @@ class RedisTaskRepository(TaskRepository):
         if task.user_id != user_id:
             raise TaskRepositoryConsistencyError('Stored task has an invalid user_id')
         return task
+
+    async def update(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        update: TaskUpdate,
+        idempotency_key: str | None = None,
+    ) -> Task:
+        if update.user_id != user_id:
+            raise TaskRepositoryConsistencyError(
+                'Task update user_id does not match request user_id'
+            )
+        task_redis_key = self._task_key(user_id, task_id)
+        redis_idempotency_key = (
+            self._update_idempotency_key(user_id, idempotency_key)
+            if idempotency_key
+            else None
+        )
+        change_payload = update.model_dump(
+            mode='json',
+            exclude_unset=True,
+            exclude={'user_id', 'expected_version'},
+        )
+
+        for _attempt in range(self._transaction_retries):
+            try:
+                async with self._redis.pipeline(transaction=True) as pipeline:
+                    watch_keys = [task_redis_key]
+                    if redis_idempotency_key:
+                        watch_keys.append(redis_idempotency_key)
+                    await pipeline.watch(*watch_keys)
+                    if redis_idempotency_key:
+                        existing_update = await pipeline.get(
+                            redis_idempotency_key
+                        )
+                        if existing_update is not None:
+                            record = json.loads(self._text(existing_update))
+                            await pipeline.unwatch()
+                            if (
+                                record.get('task_id') != task_id
+                                or record.get('changes') != change_payload
+                            ):
+                                raise TaskRepositoryConsistencyError(
+                                    'Task update idempotency key was reused '
+                                    'with different input'
+                                )
+                            replayed = Task.model_validate(record.get('task'))
+                            if replayed.user_id != user_id:
+                                raise TaskRepositoryConsistencyError(
+                                    'Stored task has an invalid user_id'
+                                )
+                            return replayed
+
+                    payload = await pipeline.get(task_redis_key)
+                    if payload is None:
+                        await pipeline.unwatch()
+                        raise TaskNotFoundError(f'Task not found: {task_id}')
+                    task = self._deserialize(payload)
+                    if task.user_id != user_id:
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Stored task has an invalid user_id'
+                        )
+                    if task.version != update.expected_version:
+                        await pipeline.unwatch()
+                        raise TaskVersionConflictError(
+                            f'Expected version {update.expected_version}, '
+                            f'got {task.version}'
+                        )
+
+                    merged = {**task.model_dump(), **change_payload}
+                    user_priority = merged.get('user_priority')
+                    ai_priority = merged.get('ai_priority')
+                    merged['effective_priority'] = user_priority or ai_priority
+                    merged['priority_source'] = (
+                        'user' if user_priority else ('ai' if ai_priority else None)
+                    )
+                    merged['updated_at'] = utc_now()
+                    merged['version'] = task.version + 1
+                    updated = Task.model_validate(merged)
+
+                    pipeline.multi()
+                    pipeline.set(task_redis_key, updated.model_dump_json())
+                    if redis_idempotency_key:
+                        pipeline.set(
+                            redis_idempotency_key,
+                            json.dumps(
+                                {
+                                    'task_id': task_id,
+                                    'changes': change_payload,
+                                    'task': updated.model_dump(mode='json'),
+                                }
+                            ),
+                        )
+                    await pipeline.execute()
+                    return updated
+            except WatchError:
+                continue
+
+        raise TaskRepositoryConcurrencyError(
+            'Could not update task after concurrent updates'
+        )
 
     async def list_tasks(self, query: TaskQuery) -> TaskListResponse:
         task_ids = await self._redis.smembers(self._user_index_key(query.user_id))
@@ -278,6 +382,18 @@ class RedisTaskRepository(TaskRepository):
         return self._key(
             'idempotency',
             'update_task_status',
+            user_id,
+            idempotency_key,
+        )
+
+    def _update_idempotency_key(
+        self,
+        user_id: str,
+        idempotency_key: str,
+    ) -> str:
+        return self._key(
+            'idempotency',
+            'update_task',
             user_id,
             idempotency_key,
         )

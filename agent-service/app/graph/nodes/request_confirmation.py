@@ -10,7 +10,7 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
     pending = PendingAction.model_validate(state.get('pending_action'))
     allowed_actions = (
         [ConfirmationAction.APPROVE, ConfirmationAction.REJECT]
-        if pending.action_type == 'update_task_status'
+        if pending.action_type in {'update_task_status', 'update_task'}
         else list(ConfirmationAction)
     )
     response = interrupt(
@@ -45,11 +45,12 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
         update['pending_action'] = pending.model_copy(
             update={'confirmation_status': 'rejected'}
         ).model_dump(mode='json')
-        update['final_response'] = (
-            '已取消任务状态更新。'
-            if pending.action_type == 'update_task_status'
-            else '已取消创建任务。'
-        )
+        if pending.action_type == 'update_task_status':
+            update['final_response'] = '已取消任务状态更新。'
+        elif pending.action_type == 'update_task':
+            update['final_response'] = '已取消任务属性修改。'
+        else:
+            update['final_response'] = '已取消创建任务。'
     elif decision.action == ConfirmationAction.EDIT:
         edits = decision.edits
         assert edits is not None

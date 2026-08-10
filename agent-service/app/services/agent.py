@@ -72,6 +72,9 @@ class TaskAgentService:
             'candidate_tasks': [],
             'selected_task': None,
             'updated_task': None,
+            'task_update_result': None,
+            'task_update': None,
+            'task_update_message': None,
             'final_response': None,
             'error_message': None,
         }
@@ -130,18 +133,26 @@ class TaskAgentService:
         candidate_tasks = values.get('candidate_tasks') or []
         final = values.get('final_response')
         intent_result = values.get('intent_result') or {}
+        task_update_result = values.get('task_update_result') or {}
 
         if pending:
             status = 'awaiting_confirmation'
             pending_action = values.get('pending_action') or {}
-            message = (
-                '请确认任务状态更新'
-                if pending_action.get('action_type') == 'update_task_status'
-                else '请确认任务创建草稿'
-            )
+            action_type = pending_action.get('action_type')
+            if action_type == 'update_task_status':
+                message = '请确认任务状态更新'
+            elif action_type == 'update_task':
+                message = str(final or '请确认任务属性修改')
+            else:
+                message = '请确认任务创建草稿'
         elif intent_result.get('needs_clarification') is True:
             status = 'needs_clarification'
             message = str(final or intent_result.get('clarification_question'))
+        elif task_update_result.get('needs_clarification') is True:
+            status = 'needs_clarification'
+            message = str(
+                final or task_update_result.get('clarification_question')
+            )
         elif error:
             status = 'error'
             message = str(final or error)

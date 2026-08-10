@@ -14,7 +14,7 @@ from tests.test_human_in_the_loop import SequenceParser, _action_id, _draft, _st
 
 REDIS_URL = os.getenv(
     'TEST_CHECKPOINT_REDIS_URL',
-    'redis://127.0.0.1:6379/0',
+    'redis://[::1]:6379/0',
 )
 
 

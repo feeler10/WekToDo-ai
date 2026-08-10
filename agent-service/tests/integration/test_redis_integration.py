@@ -10,7 +10,7 @@ from app.main import create_app
 from app.repositories.redis_task import RedisTaskRepository
 from app.schemas.task import Task, TaskQuery, TaskStatus
 
-REDIS_URL = os.getenv('TEST_REDIS_URL', 'redis://127.0.0.1:6379/15')
+REDIS_URL = os.getenv('TEST_REDIS_URL', 'redis://[::1]:6379/15')
 
 
 @pytest.mark.integration

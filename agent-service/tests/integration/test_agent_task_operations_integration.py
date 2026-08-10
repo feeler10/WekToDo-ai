@@ -15,7 +15,7 @@ from app.schemas.agent import AgentChatRequest, AgentConfirmRequest
 from app.schemas.task import Task, TaskStatus
 from app.services.agent import TaskAgentService
 
-REDIS_URL = os.getenv('TEST_REDIS_URL', 'redis://127.0.0.1:6379/15')
+REDIS_URL = os.getenv('TEST_REDIS_URL', 'redis://[::1]:6379/15')
 
 
 class UnusedParser:

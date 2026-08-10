@@ -26,6 +26,17 @@ const pending = computed(() => props.response.pending_action)
 const isStatusUpdate = computed(
   () => pending.value?.action_type === 'update_task_status',
 )
+const isAttributeUpdate = computed(
+  () => pending.value?.action_type === 'update_task',
+)
+const isRestrictedUpdate = computed(
+  () => isStatusUpdate.value || isAttributeUpdate.value,
+)
+const confirmationTitle = computed(() => {
+  if (isStatusUpdate.value) return '确认状态更新'
+  if (isAttributeUpdate.value) return '确认属性修改'
+  return '确认创建任务'
+})
 
 const editForm = reactive<TaskDraftEdit>({
   title: draft.value?.title,
@@ -73,6 +84,31 @@ function asTaskPriority(value: unknown): TaskPriority | null {
   return typeof value === 'string' && value in priorityLabels
     ? value as TaskPriority
     : null
+}
+
+function formatAttributeValue(field: string, value: unknown) {
+  if (value === null || value === undefined || value === '') return '清空'
+  if (field === 'deadline' && typeof value === 'string') {
+    const parsed = parseShanghaiDateTime(value)
+    return parsed ? `${parsed.date} ${parsed.time}（北京时间）` : value
+  }
+  if (field === 'estimated_minutes') return `${String(value)} 分钟`
+  if (field === 'user_priority') {
+    const priority = asTaskPriority(value)
+    return priority ? priorityLabels[priority] : String(value)
+  }
+  return String(value)
+}
+
+function hasAttribute(field: string) {
+  return Object.prototype.hasOwnProperty.call(
+    pending.value?.payload || {},
+    field,
+  )
+}
+
+function attributeValue(field: string) {
+  return formatAttributeValue(field, pending.value?.payload[field])
 }
 const displayedDeadline = computed(() => {
   const deadline = draft.value?.deadline
@@ -187,7 +223,7 @@ function regenerate() {
 <template>
   <a-card class='confirmation-card' size='small'>
     <template #title>
-      <span>{{ isStatusUpdate ? '确认状态更新' : '确认创建任务' }}</span>
+      <span>{{ confirmationTitle }}</span>
     </template>
 
     <template v-if='isStatusUpdate'>
@@ -197,6 +233,38 @@ function regenerate() {
         </a-descriptions-item>
         <a-descriptions-item label='状态变化'>
           {{ pending?.payload.current_status }} → {{ pending?.payload.target_status }}
+        </a-descriptions-item>
+      </a-descriptions>
+    </template>
+
+    <template v-else-if='isAttributeUpdate'>
+      <a-descriptions :column='1' size='small'>
+        <a-descriptions-item label='任务'>
+          {{ response.task?.title || pending?.target_id }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if='hasAttribute("title")' label='标题'>
+          {{ attributeValue('title') }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if='hasAttribute("description")' label='描述'>
+          {{ attributeValue('description') }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if='hasAttribute("category")' label='分类'>
+          {{ attributeValue('category') }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if='hasAttribute("deadline")' label='截止时间'>
+          {{ attributeValue('deadline') }}
+        </a-descriptions-item>
+        <a-descriptions-item
+          v-if='hasAttribute("estimated_minutes")'
+          label='预计耗时'
+        >
+          {{ attributeValue('estimated_minutes') }}
+        </a-descriptions-item>
+        <a-descriptions-item
+          v-if='hasAttribute("user_priority")'
+          label='用户优先级'
+        >
+          {{ attributeValue('user_priority') }}
         </a-descriptions-item>
       </a-descriptions>
     </template>
@@ -272,14 +340,14 @@ function regenerate() {
       <template v-else>
         <a-button danger :disabled='loading' @click='reject'>取消</a-button>
         <a-button
-          v-if='!isStatusUpdate'
+          v-if='!isRestrictedUpdate'
           :disabled='loading'
           @click='regenerate'
         >
           重新生成
         </a-button>
         <a-button
-          v-if='!isStatusUpdate'
+          v-if='!isRestrictedUpdate'
           :disabled='loading'
           @click='startEditing'
         >

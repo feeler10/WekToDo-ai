@@ -12,10 +12,13 @@ from app.graph.nodes import (
     classify_intent,
     execute_create_task,
     execute_status_update,
+    execute_task_update,
     handle_error,
     parse_task,
+    parse_task_update,
     prepare_confirmation,
     prepare_status_update,
+    prepare_task_update,
     query_task_data,
     request_confirmation,
     request_intent_clarification,
@@ -29,6 +32,7 @@ from app.graph.nodes import (
     validate_task,
 )
 from app.graph.parser import TaskParser
+from app.graph.task_update_parser import TaskUpdateParser
 from app.graph.routing import (
     route_after_classification,
     route_after_query_clarification,
@@ -41,6 +45,7 @@ from app.graph.routing import (
     route_after_priority,
     route_after_query,
     route_after_task_reference_resolution,
+    route_after_task_update_parsing,
     route_after_validation,
 )
 from app.graph.state import TaskAgentState
@@ -59,6 +64,7 @@ class GraphDependencies:
     clock: Callable[[], datetime] = utc_now
     task_matcher: TaskMatcher | None = None
     pending_context_ttl_seconds: int = 900
+    task_update_parser: TaskUpdateParser | None = None
 
 
 def build_task_graph(
@@ -126,6 +132,15 @@ def build_task_graph(
         ),
     )
     builder.add_node('prepare_status_update', prepare_status_update)
+    builder.add_node(
+        'parse_task_update',
+        partial(
+            parse_task_update,
+            parser=dependencies.task_update_parser,
+            clock=dependencies.clock,
+        ),
+    )
+    builder.add_node('prepare_task_update', prepare_task_update)
     builder.add_node('prepare_confirmation', prepare_confirmation)
     builder.add_node('request_confirmation', request_confirmation)
     builder.add_node(
@@ -139,6 +154,13 @@ def build_task_graph(
         'execute_status_update',
         partial(
             execute_status_update,
+            repository=dependencies.task_repository,
+        ),
+    )
+    builder.add_node(
+        'execute_task_update',
+        partial(
+            execute_task_update,
             repository=dependencies.task_repository,
         ),
     )
@@ -175,6 +197,7 @@ def build_task_graph(
         {
             'classify_intent': 'classify_intent',
             'prepare_status_update': 'prepare_status_update',
+            'parse_task_update': 'parse_task_update',
             'handle_error': 'handle_error',
             'end': END,
         },
@@ -222,12 +245,31 @@ def build_task_graph(
         route_after_task_reference_resolution,
         {
             'prepare_status_update': 'prepare_status_update',
+            'parse_task_update': 'parse_task_update',
             'handle_error': 'handle_error',
             'end': END,
         },
     )
     builder.add_conditional_edges(
         'prepare_status_update',
+        route_after_preparation,
+        {
+            'request_confirmation': 'request_confirmation',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
+        'parse_task_update',
+        route_after_task_update_parsing,
+        {
+            'prepare_task_update': 'prepare_task_update',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
+        'prepare_task_update',
         route_after_preparation,
         {
             'request_confirmation': 'request_confirmation',
@@ -273,6 +315,7 @@ def build_task_graph(
         {
             'execute_create_task': 'execute_create_task',
             'execute_status_update': 'execute_status_update',
+            'execute_task_update': 'execute_task_update',
             'edit': 'validate_task',
             'regenerate': 'parse_task',
             'reject': END,
@@ -289,6 +332,14 @@ def build_task_graph(
     )
     builder.add_conditional_edges(
         'execute_status_update',
+        route_after_execution,
+        {
+            'end': END,
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'execute_task_update',
         route_after_execution,
         {
             'end': END,

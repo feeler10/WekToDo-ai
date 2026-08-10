@@ -56,16 +56,26 @@ async def resolve_task_reference(
             'error_message': None,
         }
     if len(serialized) > 1:
+        operation = IntentType(state['intent'])
         pending = PendingTaskSelection(
             user_id=state['user_id'],
             thread_id=state['thread_id'],
-            operation=IntentType.UPDATE_TASK_STATUS,
+            operation=operation,
             candidate_task_ids=[task.id for task in matched.tasks],
             candidate_versions={
                 task.id: task.version for task in matched.tasks
             },
             reference=state.get('task_reference') or '候选任务',
-            target_status=state.get('target_status'),
+            target_status=(
+                state.get('target_status')
+                if operation == IntentType.UPDATE_TASK_STATUS
+                else None
+            ),
+            task_update_message=(
+                state.get('user_message')
+                if operation == IntentType.UPDATE_TASK
+                else None
+            ),
             created_at=now,
             expires_at=now + pending_ttl,
         )
@@ -77,7 +87,7 @@ async def resolve_task_reference(
             state.get('user_id'),
             state.get('thread_id'),
             len(matched.tasks),
-            IntentType.UPDATE_TASK_STATUS.value,
+            operation.value,
             pending.created_at.isoformat(),
             pending.expires_at.isoformat(),
         )

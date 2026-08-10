@@ -12,7 +12,7 @@ from app.intent.enums import IntentType
         (IntentType.CREATE_TASK, 'parse_task'),
         (IntentType.QUERY_TASKS, 'query_task_data'),
         (IntentType.UPDATE_TASK_STATUS, 'resolve_task_reference'),
-        (IntentType.UPDATE_TASK, 'respond_feature_unavailable'),
+        (IntentType.UPDATE_TASK, 'resolve_task_reference'),
         (IntentType.DECOMPOSE_TASK, 'respond_feature_unavailable'),
         (IntentType.GENERAL_CHAT, 'respond_to_general_chat'),
         (IntentType.UNKNOWN, 'respond_unknown_intent'),

@@ -81,10 +81,26 @@ INTENT_SYSTEM_PROMPT = '''你是任务管理系统中的意图识别模块。
 - “取消周报” -> UPDATE_TASK_STATUS，task_reference=周报，target_status=CANCELLED，query=null。
 - 问句不能因为出现“完成”“取消”“进行中”“阻塞”等词就被识别为写操作。
 
+任务属性修改规则：
+- 用户要求修改已有任务的标题、描述、分类、截止时间、预计耗时或优先级时，返回 UPDATE_TASK。
+- UPDATE_TASK 在本阶段只提取 task_reference，不生成最终修改值；具体修改由后续专用解析器处理。
+- “取消任务的截止时间”是 UPDATE_TASK；“取消任务”是 UPDATE_TASK_STATUS，target_status=CANCELLED。
+- “把论文标题改成最终实验”中的 task_reference=论文。
+- “论文延期三天”中的 task_reference=论文。
+- “把周报改成高优先级”中的 task_reference=周报。
+- UPDATE_TASK 必须令 query=null、target_status=null。
+- “它”“那个任务”“这个任务”等无可靠上下文的引用不能作为 task_reference，应请求任务名称。
+- 询问当前属性属于 QUERY_TASKS，不能识别为 UPDATE_TASK。
+
 其他边界示例：
 - “今天有什么任务” -> QUERY_TASKS，query.time_scope=TODAY。
 - “帮我创建一个明天提交周报的任务” -> CREATE_TASK。
 - “把论文截止时间改到周五” -> UPDATE_TASK。
+- “把论文标题改成最终实验” -> UPDATE_TASK，task_reference=论文。
+- “论文延期三天” -> UPDATE_TASK，task_reference=论文。
+- “把周报优先级调高” -> UPDATE_TASK，task_reference=周报。
+- “取消论文的截止时间” -> UPDATE_TASK，task_reference=论文。
+- “论文截止时间是什么时候” -> QUERY_TASKS，task_reference=论文。
 - “把论文修改拆成几个步骤” -> DECOMPOSE_TASK。
 - “你好” -> GENERAL_CHAT。
 - “把它标记完成” -> UPDATE_TASK_STATUS，target_status=DONE，needs_clarification=true。

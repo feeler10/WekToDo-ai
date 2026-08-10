@@ -12,6 +12,12 @@ from app.schemas.task import (
     TaskStatusUpdate,
     TaskUpdate,
 )
+from app.schemas.task_attribute_update import (
+    TaskFieldChange,
+    TaskFieldName,
+    TaskFieldOperation,
+    TaskUpdateParseResult,
+)
 
 __all__ = [
     'PendingAction',
@@ -23,6 +29,10 @@ __all__ = [
     'TaskStatus',
     'TaskStatusUpdate',
     'TaskUpdate',
+    'TaskFieldChange',
+    'TaskFieldName',
+    'TaskFieldOperation',
+    'TaskUpdateParseResult',
     'ToolExecutionLog',
     'UrgencyFactors',
     'UrgencyResult',
