@@ -1,0 +1,153 @@
+{
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "create_collect_title",
+      "kind": "create_task",
+      "timezone": "Asia/Shanghai",
+      "current_datetime": "2026-08-11T16:00:00+08:00",
+      "messages": [
+        "帮我创建一个任务",
+        "标题叫项目周报"
+      ],
+      "expected": [
+        {
+          "route": "clarify",
+          "missing_fields": ["title"]
+        },
+        {
+          "route": "ready",
+          "missing_fields": [],
+          "title": "项目周报"
+        }
+      ]
+    },
+    {
+      "id": "create_clarify_ambiguous_deadline",
+      "kind": "create_task",
+      "timezone": "Asia/Shanghai",
+      "current_datetime": "2026-08-11T16:00:00+08:00",
+      "messages": [
+        "创建整理项目资料的任务，月底前后完成",
+        "具体截止到8月31日晚上6点"
+      ],
+      "expected": [
+        {
+          "route": "clarify",
+          "missing_fields": ["deadline"],
+          "title": "整理项目资料"
+        },
+        {
+          "route": "ready",
+          "missing_fields": [],
+          "title": "整理项目资料"
+        }
+      ]
+    },
+    {
+      "id": "create_later_correction_wins",
+      "kind": "create_task",
+      "timezone": "Asia/Shanghai",
+      "current_datetime": "2026-08-11T16:00:00+08:00",
+      "messages": [
+        "创建一个任务，标题暂定初版周报，月底前后完成",
+        "名称改成项目周报，截止到8月31日晚上6点"
+      ],
+      "expected": [
+        {
+          "route": "clarify",
+          "missing_fields": ["deadline"],
+          "title": "初版周报"
+        },
+        {
+          "route": "ready",
+          "missing_fields": [],
+          "title": "项目周报"
+        }
+      ]
+    },
+    {
+      "id": "update_collect_field_and_value",
+      "kind": "update_task",
+      "timezone": "Asia/Shanghai",
+      "current_datetime": "2026-08-11T16:00:00+08:00",
+      "current_task": {
+        "id": "water",
+        "user_id": "evaluation-user",
+        "title": "接水任务"
+      },
+      "messages": [
+        "修改接水任务",
+        "标题",
+        "改成每天早上接水"
+      ],
+      "expected": [
+        {
+          "route": "clarify"
+        },
+        {
+          "route": "clarify"
+        },
+        {
+          "route": "ready",
+          "changes": {
+            "title": "每天早上接水"
+          }
+        }
+      ]
+    },
+    {
+      "id": "update_clarify_ambiguous_deadline",
+      "kind": "update_task",
+      "timezone": "Asia/Shanghai",
+      "current_datetime": "2026-08-11T16:00:00+08:00",
+      "current_task": {
+        "id": "paper",
+        "user_id": "evaluation-user",
+        "title": "提交论文"
+      },
+      "messages": [
+        "修改论文任务的截止时间，改到月底前后",
+        "改到8月31日晚上6点"
+      ],
+      "expected": [
+        {
+          "route": "clarify"
+        },
+        {
+          "route": "ready",
+          "changes": {
+            "deadline": "2026-08-31T18:00:00+08:00"
+          }
+        }
+      ]
+    },
+    {
+      "id": "update_clear_deadline",
+      "kind": "update_task",
+      "timezone": "Asia/Shanghai",
+      "current_datetime": "2026-08-11T16:00:00+08:00",
+      "current_task": {
+        "id": "review",
+        "user_id": "evaluation-user",
+        "title": "评审材料",
+        "deadline": "2026-08-20T18:00:00+08:00"
+      },
+      "messages": [
+        "修改评审材料任务",
+        "取消截止时间"
+      ],
+      "expected": [
+        {
+          "route": "clarify"
+        },
+        {
+          "route": "ready",
+          "changes": {
+            "deadline": null
+          }
+        }
+      ]
+    }
+  ]
+}

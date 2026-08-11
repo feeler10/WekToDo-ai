@@ -6,6 +6,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
 from app.graph.builder import GraphDependencies, build_task_graph
+from app.graph.task_update_parser import TASK_UPDATE_SYSTEM_PROMPT
 from app.intent.enums import IntentType
 from app.intent.providers.fake import FakeIntentClassifier
 from app.intent.service import IntentRecognitionService
@@ -55,6 +56,11 @@ def update_intent_service(reference: str) -> IntentRecognitionService:
             reason='测试属性修改',
         )
     )
+
+
+def test_update_prompt_strips_title_instruction_words() -> None:
+    assert '新标题值是 X' in TASK_UPDATE_SYSTEM_PROMPT
+    assert '不能把“改成”' in TASK_UPDATE_SYSTEM_PROMPT
 
 
 def test_update_parse_result_rejects_duplicate_fields() -> None:

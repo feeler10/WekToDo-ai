@@ -128,6 +128,14 @@ TASK_UPDATE_CLARIFICATION_MAX_ROUNDS=4
 
 待补充上下文只保存目标任务 ID、期望版本、已确定的最小修改结果、有限输入和过期信息。每次恢复都会按当前用户从 Redis 重读任务并校验版本；任务被删除或已发生变化时停止旧修改。支持取消、明确新请求替换、TTL、用户/线程隔离和最大轮数，轮数默认为 4，可通过 `TASK_UPDATE_CLARIFICATION_MAX_ROUNDS` 调整。补齐后只进入修改预览，用户确认前不写 Redis。
 
+## v0.2.4 多轮对话稳定性基线
+
+`evaluation/datasets/multiturn_cases.v1.json` 固化了创建与修改任务的版本化多轮用例。评测按每轮结构化结果检查澄清/就绪路由、缺失字段、标题和最小修改补丁，不要求模型生成完全相同的自然语言追问。真实模型脚本只调用创建与修改解析器，不访问 Redis，也不会执行任何任务写入。
+
+创建和修改任务的待补充节点会记录统一的 `pending_operation` 事件，包括 `prepared`、`resumed`、`cancelled`、`replaced`、`expired`、`stale` 和 `max_rounds`。事件只包含请求、用户、线程、轮次、任务 ID/版本、缺失字段、固定原因、下一节点和过期时间等受限元数据，不记录用户原话、任务标题或草稿正文。
+
+API 回归用例覆盖“修改接水任务 → 标题 → 改成每天早上接水 → 确认”的真实 HTTP 契约：三次 chat 必须复用同一 `thread_id`，前两轮返回 `needs_clarification`，第三轮返回 `awaiting_confirmation`，确认前任务保持原值和原版本，批准后才执行一次版本化修改。Vue Store 已符合该契约：线程 ID 在页面会话内保持不变，只有 `awaiting_confirmation` 才锁定为待确认动作，`needs_clarification` 时输入框继续可用。
+
 ## 测试
 
 ```powershell
@@ -152,9 +160,10 @@ python -m pytest agent-service/tests/integration
 ```powershell
 conda activate langchain
 python agent-service/scripts/check_intent_model.py
+python agent-service/scripts/check_multiturn_model.py
 ```
 
-脚本读取 `evaluation/datasets/intent_cases.json`，只输出期望值、实际结构化结果和统计；它不访问 Redis，也不修改任务。缺少 `LLM_API_KEY` 时脚本会明确退出，且不会调用模型。
+两个脚本分别读取 `evaluation/datasets/intent_cases.json` 和 `evaluation/datasets/multiturn_cases.v1.json`，只输出期望值、实际结构化结果和统计；它们不访问 Redis，也不修改任务。缺少 `LLM_API_KEY` 时脚本会明确退出，且不会调用模型。
 
 前端类型检查与生产构建：
 
@@ -166,4 +175,4 @@ npm run build
 
 ## 当前状态
 
-Milestone 7 已加入最小 Vue 对话页、任务确认卡、父子层级任务列表、确认式状态更新和确认式属性修改。P1a 后端已支持 AI 任务拆解、完整方案确认与编辑、Redis 原子批量创建直接子任务，以及子任务状态对父任务进度和完成状态的自动联动；v0.2.2 进一步支持自然语言删除计划、预览后原子批量删除，以及 `CANCELLED` 任务先恢复再继续原意图；v0.2.3 统一收录了同线程唯一任务焦点、受控单数指代、创建任务跨轮缺失参数收集，以及修改任务跨轮字段/新值收集、版本冲突防护与 Checkpoint 恢复。前端可展示批量删除清单与恢复确认，并在删除成功后同步移除本地任务。更复杂的多级任务树页面仍未建设。Rule/Semantic/Hybrid Provider、向量检索、多意图拆分、复数及列表序号上下文引用、自动样例学习、Milvus、每日简报、动态规划和复杂仪表盘仍未实现。
+Milestone 7 已加入最小 Vue 对话页、任务确认卡、父子层级任务列表、确认式状态更新和确认式属性修改。P1a 后端已支持 AI 任务拆解、完整方案确认与编辑、Redis 原子批量创建直接子任务，以及子任务状态对父任务进度和完成状态的自动联动；v0.2.2 进一步支持自然语言删除计划、预览后原子批量删除，以及 `CANCELLED` 任务先恢复再继续原意图；v0.2.3 统一收录了同线程唯一任务焦点、受控单数指代、创建任务跨轮缺失参数收集，以及修改任务跨轮字段/新值收集、版本冲突防护与 Checkpoint 恢复；v0.2.4 增加版本化多轮评测、HTTP 零写入回归和隐私受限的待补充事件日志。前端可展示批量删除清单与恢复确认，并在删除成功后同步移除本地任务。更复杂的多级任务树页面仍未建设。Rule/Semantic/Hybrid Provider、向量检索、多意图拆分、复数及列表序号上下文引用、自动样例学习、Milvus、每日简报、动态规划和复杂仪表盘仍未实现。

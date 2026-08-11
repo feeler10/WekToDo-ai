@@ -60,6 +60,8 @@ async def test_parser_uses_structured_output_and_retries_validation_failure() ->
     assert len(runnable.inputs) == 2
     assert 'Return JSON only' in runnable.inputs[0][0][1]
     assert 'title' in runnable.inputs[0][0][1]
+    assert 'missing_fields is not a list' in runnable.inputs[0][0][1]
+    assert '月底前后' in runnable.inputs[0][0][1]
     assert 'failed Pydantic validation' in runnable.inputs[1][0][1]
 
 

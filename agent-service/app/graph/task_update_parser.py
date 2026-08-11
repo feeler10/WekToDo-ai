@@ -51,7 +51,7 @@ TASK_UPDATE_SYSTEM_PROMPT = '''你是任务管理系统中的任务属性修改�
 - SET 必须提供 value；CLEAR 的 value 必须为 null；title 不能 CLEAR；同一字段最多出现一次。
 
 字段规则：
-- 标题必须使用用户明确指定的新标题，不得擅自润色或扩写。
+- 标题必须使用用户明确指定的新标题，不得擅自润色或扩写；“改成X”“改为X”“标题叫X”中的新标题值是 X，不能把“改成”“改为”“标题叫”等修改指令词写入 title。
 - deadline 必须是带 UTC offset 的 ISO 8601 时间。
 - 所有自然语言时间只使用 Current datetime、Business timezone 和 current_task.deadline 解析。
 - “延期三天”以 current_task.deadline 增加三个自然日并保留本地时刻；“提前两天”同理。当前截止时间为空时必须澄清。

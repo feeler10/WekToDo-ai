@@ -7,7 +7,13 @@ from langgraph.types import Command
 
 from app.graph.builder import GraphDependencies, build_task_graph
 from tests.intent_helpers import existing_flow_intent_service
-from app.schemas.task import Task, TaskListResponse, TaskQuery, TaskStatus
+from app.schemas.task import (
+    Task,
+    TaskListResponse,
+    TaskQuery,
+    TaskStatus,
+    TaskUpdate,
+)
 
 
 class SequenceParser:
@@ -29,6 +35,7 @@ class InMemoryTaskRepository:
     def __init__(self) -> None:
         self.tasks: dict[str, Task] = {}
         self.idempotency: dict[str, str] = {}
+        self.update_idempotency: dict[str, Task] = {}
         self.create_calls = 0
 
     async def create(self, task: Task, *, idempotency_key: str) -> Task:
@@ -47,6 +54,37 @@ class InMemoryTaskRepository:
     async def list_tasks(self, query: TaskQuery) -> TaskListResponse:
         tasks = [task for task in self.tasks.values() if task.user_id == query.user_id]
         return TaskListResponse(items=tasks, total=len(tasks))
+
+    async def update(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        update: TaskUpdate,
+        idempotency_key: str | None = None,
+    ) -> Task:
+        if idempotency_key and idempotency_key in self.update_idempotency:
+            return self.update_idempotency[idempotency_key]
+        task = await self.get(user_id=user_id, task_id=task_id)
+        if task is None:
+            raise ValueError('Task not found')
+        if task.version != update.expected_version:
+            raise ValueError('Task version conflict')
+        changes = update.model_dump(
+            exclude={'user_id', 'expected_version'},
+            exclude_unset=True,
+        )
+        updated = Task.model_validate(
+            {
+                **task.model_dump(),
+                **changes,
+                'version': task.version + 1,
+            }
+        )
+        self.tasks[task_id] = updated
+        if idempotency_key:
+            self.update_idempotency[idempotency_key] = updated
+        return updated
 
     async def update_status(
         self,

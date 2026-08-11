@@ -10,6 +10,7 @@ from app.services.task_draft_clarification import (
     is_task_draft_collection_cancellation,
     looks_like_explicit_new_request,
 )
+from app.services.pending_operation_logging import log_pending_operation_event
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,16 @@ def prepare_task_draft_clarification(
     ]
     clarification_round = state.get('task_draft_clarification_round', 0) + 1
     if clarification_round > max_rounds:
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_create',
+            event='max_rounds',
+            round_number=clarification_round,
+            missing_fields=[field.value for field in missing_fields],
+            reason='clarification_limit_reached',
+            next_node='finalize_turn',
+        )
         return {
             'pending_task_draft_clarification': None,
             'task_collection_inputs': [],
@@ -53,16 +64,15 @@ def prepare_task_draft_clarification(
         created_at=now,
         expires_at=now + pending_ttl,
     )
-    logger.info(
-        'pending_state_type=task_draft_clarification request_id=%s '
-        'user_id=%s thread_id=%s round=%s missing_fields=%s '
-        'pending_expires_at=%s',
-        state.get('request_id'),
-        state.get('user_id'),
-        state.get('thread_id'),
-        clarification_round,
-        [field.value for field in missing_fields],
-        pending.expires_at.isoformat(),
+    log_pending_operation_event(
+        logger,
+        state=state,
+        operation_type='task_create',
+        event='prepared',
+        round_number=clarification_round,
+        missing_fields=[field.value for field in missing_fields],
+        next_node='finalize_turn',
+        expires_at=pending.expires_at,
     )
     return {
         'pending_task_draft_clarification': pending.model_dump(mode='json'),
@@ -83,6 +93,16 @@ def resolve_task_draft_clarification(
     now = clock()
     message = state.get('user_message', '')
     if pending.expires_at <= now:
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_create',
+            event='expired',
+            round_number=pending.clarification_round,
+            reason='context_ttl_elapsed',
+            next_node='classify_intent',
+            expires_at=pending.expires_at,
+        )
         return {
             'pending_task_draft_clarification': None,
             'task_collection_inputs': [],
@@ -90,6 +110,15 @@ def resolve_task_draft_clarification(
             'pending_route': 'classify',
         }
     if is_task_draft_collection_cancellation(message):
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_create',
+            event='cancelled',
+            round_number=pending.clarification_round,
+            reason='explicit_user_cancellation',
+            next_node='finalize_turn',
+        )
         return {
             'pending_task_draft_clarification': None,
             'task_collection_inputs': [],
@@ -100,6 +129,15 @@ def resolve_task_draft_clarification(
             'error_message': None,
         }
     if looks_like_explicit_new_request(message):
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_create',
+            event='replaced',
+            round_number=pending.clarification_round,
+            reason='explicit_new_operation',
+            next_node='classify_intent',
+        )
         return {
             'pending_task_draft_clarification': None,
             'task_collection_inputs': [],
@@ -108,6 +146,14 @@ def resolve_task_draft_clarification(
             'final_response': None,
             'error_message': None,
         }
+    log_pending_operation_event(
+        logger,
+        state=state,
+        operation_type='task_create',
+        event='resumed',
+        round_number=pending.clarification_round,
+        next_node='parse_task',
+    )
     return {
         'pending_task_draft_clarification': None,
         'task_collection_inputs': [*pending.user_inputs, message],

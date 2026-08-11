@@ -11,6 +11,7 @@ from app.services.task_update_clarification import (
     is_task_update_collection_cancellation,
     looks_like_explicit_new_request,
 )
+from app.services.pending_operation_logging import log_pending_operation_event
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,17 @@ def prepare_task_update_clarification(
             state.get('task_update_clarification_round', 0) + 1
         )
         if clarification_round > max_rounds:
+            log_pending_operation_event(
+                logger,
+                state=state,
+                operation_type='task_update',
+                event='max_rounds',
+                round_number=clarification_round,
+                task_id=task.id,
+                expected_version=task.version,
+                reason='clarification_limit_reached',
+                next_node='finalize_turn',
+            )
             return {
                 'pending_task_update_clarification': None,
                 'task_update_inputs': [],
@@ -74,17 +86,16 @@ def prepare_task_update_clarification(
                 f'Could not prepare task update clarification: {exc}'
             )
         }
-    logger.info(
-        'pending_state_type=task_update_clarification request_id=%s '
-        'user_id=%s thread_id=%s task_id=%s expected_version=%s round=%s '
-        'pending_expires_at=%s',
-        state.get('request_id'),
-        state.get('user_id'),
-        state.get('thread_id'),
-        task.id,
-        task.version,
-        clarification_round,
-        pending.expires_at.isoformat(),
+    log_pending_operation_event(
+        logger,
+        state=state,
+        operation_type='task_update',
+        event='prepared',
+        round_number=clarification_round,
+        task_id=task.id,
+        expected_version=task.version,
+        next_node='finalize_turn',
+        expires_at=pending.expires_at,
     )
     return {
         'pending_task_update_clarification': pending.model_dump(mode='json'),
@@ -114,8 +125,31 @@ async def resolve_task_update_clarification(
         'task_update_clarification_round': 0,
     }
     if pending.expires_at <= now:
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_update',
+            event='expired',
+            round_number=pending.clarification_round,
+            task_id=pending.task_id,
+            expected_version=pending.expected_version,
+            reason='context_ttl_elapsed',
+            next_node='classify_intent',
+            expires_at=pending.expires_at,
+        )
         return {**cleared, 'pending_route': 'classify'}
     if is_task_update_collection_cancellation(message):
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_update',
+            event='cancelled',
+            round_number=pending.clarification_round,
+            task_id=pending.task_id,
+            expected_version=pending.expected_version,
+            reason='explicit_user_cancellation',
+            next_node='finalize_turn',
+        )
         return {
             **cleared,
             'pending_route': 'handled',
@@ -124,6 +158,17 @@ async def resolve_task_update_clarification(
             'error_message': None,
         }
     if looks_like_explicit_new_request(message):
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_update',
+            event='replaced',
+            round_number=pending.clarification_round,
+            task_id=pending.task_id,
+            expected_version=pending.expected_version,
+            reason='explicit_new_operation',
+            next_node='classify_intent',
+        )
         return {
             **cleared,
             'pending_route': 'classify',
@@ -140,6 +185,17 @@ async def resolve_task_update_clarification(
     except Exception as exc:
         return {'error_message': f'Task update context restore failed: {exc}'}
     if task is None or task.version != pending.expected_version:
+        log_pending_operation_event(
+            logger,
+            state=state,
+            operation_type='task_update',
+            event='stale',
+            round_number=pending.clarification_round,
+            task_id=pending.task_id,
+            expected_version=pending.expected_version,
+            reason='task_missing_or_version_changed',
+            next_node='finalize_turn',
+        )
         return {
             **cleared,
             'pending_route': 'handled',
@@ -150,6 +206,16 @@ async def resolve_task_update_clarification(
             ),
             'error_message': None,
         }
+    log_pending_operation_event(
+        logger,
+        state=state,
+        operation_type='task_update',
+        event='resumed',
+        round_number=pending.clarification_round,
+        task_id=pending.task_id,
+        expected_version=pending.expected_version,
+        next_node='parse_task_update',
+    )
     return {
         'pending_task_update_clarification': None,
         'task_update_inputs': [*pending.user_inputs, message],
