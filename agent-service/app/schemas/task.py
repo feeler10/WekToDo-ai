@@ -92,6 +92,7 @@ class TaskStatusUpdate(BaseModel):
     target_status: TaskStatus
     expected_version: int = Field(ge=1)
     confirmed_reopen: bool = False
+    confirmed_restore: bool = False
 
 
 class TaskQuery(BaseModel):

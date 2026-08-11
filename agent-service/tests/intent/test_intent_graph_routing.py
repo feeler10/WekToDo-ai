@@ -14,6 +14,7 @@ from app.intent.enums import IntentType
         (IntentType.UPDATE_TASK_STATUS, 'resolve_task_reference'),
         (IntentType.UPDATE_TASK, 'resolve_task_reference'),
         (IntentType.DECOMPOSE_TASK, 'resolve_task_reference'),
+        (IntentType.DELETE_TASK, 'parse_task_delete'),
         (IntentType.GENERAL_CHAT, 'respond_to_general_chat'),
         (IntentType.UNKNOWN, 'respond_unknown_intent'),
     ],

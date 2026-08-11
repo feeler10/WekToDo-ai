@@ -53,10 +53,20 @@ export const useAgentStore = defineStore('agent', () => {
     if (response.tasks.length > 0) {
       tasks.value = response.tasks
     }
+    const deletedIds = new Set([
+      ...response.deleted_task_ids,
+      ...(response.deleted_task_id ? [response.deleted_task_id] : []),
+    ])
+    if (deletedIds.size > 0) {
+      tasks.value = tasks.value.filter(
+        (task) => !deletedIds.has(task.id),
+      )
+    }
     const changedTasks = [
       response.parent_task,
       response.task,
       ...response.subtasks,
+      ...response.parent_tasks,
     ].filter((task): task is Task => Boolean(task))
     for (const responseTask of changedTasks) {
       const index = tasks.value.findIndex((task) => task.id === responseTask.id)

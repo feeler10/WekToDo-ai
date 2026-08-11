@@ -17,6 +17,12 @@ from app.schemas.subtask import (
     SubtaskBatchResult,
     TaskStatusUpdateResult,
 )
+from app.schemas.task_deletion import (
+    TaskDelete,
+    TaskDeleteBatch,
+    TaskDeleteBatchResult,
+    TaskDeleteResult,
+)
 
 
 _OPEN_STATUSES = {TaskStatus.TODO, TaskStatus.DOING, TaskStatus.BLOCKED}
@@ -115,6 +121,7 @@ async def update_task_status(
     idempotency_key: str,
     confirmed: bool,
     confirmed_reopen: bool = False,
+    confirmed_restore: bool = False,
 ) -> Task:
     if not confirmed:
         raise PermissionError('update_task_status requires user confirmation')
@@ -126,6 +133,7 @@ async def update_task_status(
         target_status=target_status,
         expected_version=expected_version,
         confirmed_reopen=confirmed_reopen,
+        confirmed_restore=confirmed_restore,
         idempotency_key=idempotency_key,
     )
 
@@ -140,6 +148,7 @@ async def update_task_status_with_rollup(
     idempotency_key: str,
     confirmed: bool,
     confirmed_reopen: bool = False,
+    confirmed_restore: bool = False,
 ) -> TaskStatusUpdateResult:
     if not confirmed:
         raise PermissionError(
@@ -153,6 +162,7 @@ async def update_task_status_with_rollup(
         target_status=target_status,
         expected_version=expected_version,
         confirmed_reopen=confirmed_reopen,
+        confirmed_restore=confirmed_restore,
         idempotency_key=idempotency_key,
     )
 
@@ -195,5 +205,47 @@ async def update_task(
         user_id=user_id,
         task_id=task_id,
         update=task_update,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def delete_task(
+    *,
+    repository: TaskRepository,
+    user_id: str,
+    task_id: str,
+    delete_input: TaskDelete | dict[str, object],
+    idempotency_key: str,
+    confirmed: bool,
+) -> TaskDeleteResult:
+    if not confirmed:
+        raise PermissionError('delete_task requires user confirmation')
+    if not idempotency_key:
+        raise ValueError('idempotency_key must not be empty')
+    task_delete = TaskDelete.model_validate(delete_input)
+    if task_delete.user_id != user_id:
+        raise ValueError('Task delete user_id does not match request user_id')
+    return await repository.delete(
+        user_id=user_id,
+        task_id=task_id,
+        expected_version=task_delete.expected_version,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def delete_tasks_batch(
+    *,
+    repository: TaskRepository,
+    batch_input: TaskDeleteBatch | dict[str, object],
+    idempotency_key: str,
+    confirmed: bool,
+) -> TaskDeleteBatchResult:
+    if not confirmed:
+        raise PermissionError('delete_tasks_batch requires user confirmation')
+    if not idempotency_key:
+        raise ValueError('idempotency_key must not be empty')
+    batch = TaskDeleteBatch.model_validate(batch_input)
+    return await repository.delete_batch(
+        batch,
         idempotency_key=idempotency_key,
     )

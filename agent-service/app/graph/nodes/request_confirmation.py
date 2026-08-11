@@ -11,7 +11,13 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
     pending = PendingAction.model_validate(state.get('pending_action'))
     allowed_actions = (
         [ConfirmationAction.APPROVE, ConfirmationAction.REJECT]
-        if pending.action_type in {'update_task_status', 'update_task'}
+        if pending.action_type in {
+            'update_task_status',
+            'update_task',
+            'delete_task',
+            'delete_tasks_batch',
+            'restore_task',
+        }
         else list(ConfirmationAction)
     )
     response = interrupt(
@@ -19,7 +25,15 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
             'type': (
                 'subtask_plan_confirmation'
                 if pending.action_type == 'create_subtasks_batch'
-                else 'task_confirmation'
+                else (
+                    'task_delete_confirmation'
+                    if pending.action_type in {'delete_task', 'delete_tasks_batch'}
+                    else (
+                        'task_restore_confirmation'
+                        if pending.action_type == 'restore_task'
+                        else 'task_confirmation'
+                    )
+                )
             ),
             'pending_action': pending.model_dump(mode='json'),
             'allowed_actions': [action.value for action in allowed_actions],
@@ -56,6 +70,12 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
             update['final_response'] = '已取消任务属性修改。'
         elif pending.action_type == 'create_subtasks_batch':
             update['final_response'] = '已取消任务拆解和子任务创建。'
+        elif pending.action_type == 'delete_task':
+            update['final_response'] = '已取消删除任务。'
+        elif pending.action_type == 'delete_tasks_batch':
+            update['final_response'] = '已取消批量删除任务。'
+        elif pending.action_type == 'restore_task':
+            update['final_response'] = '已取消恢复任务，原操作未执行。'
         else:
             update['final_response'] = '已取消创建任务。'
     elif decision.action == ConfirmationAction.EDIT:

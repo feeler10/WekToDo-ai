@@ -31,7 +31,7 @@ flowchart LR
     F --> G["IntentResult 校验"]
     G --> H["classify_intent 节点"]
     H --> I["LangGraph Router"]
-    I --> J["查询、创建、状态更新或安全回复"]
+    I --> J["查询、创建、更新、拆解、删除或安全回复"]
 ```
 
 最重要的边界是：**意图识别只分类，不执行操作。**
@@ -153,6 +153,7 @@ class IntentResult(BaseModel):
 | `UPDATE_TASK` | 定位任务，解析属性补丁，确认后更新 |
 | `UPDATE_TASK_STATUS` | 定位任务，校验状态流转，确认后更新 |
 | `DECOMPOSE_TASK` | 定位父任务，生成并校验拆解方案，确认后原子批量创建子任务 |
+| `DELETE_TASK` | 进入独立删除解析器，将自然语言转换为受控查询参数；Redis 查询并预览全部匹配项后，确认执行带版本、幂等和父任务联动的原子删除 |
 | `GENERAL_CHAT` | 返回普通中文能力提示 |
 | `UNKNOWN` | 返回无法识别提示或服务不可用提示 |
 

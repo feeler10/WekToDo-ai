@@ -124,7 +124,11 @@ async def resolve_task_selection(
                         else (
                             '拆解'
                             if pending.operation == IntentType.DECOMPOSE_TASK
-                            else '更新'
+                            else (
+                                '删除'
+                                if pending.operation == IntentType.DELETE_TASK
+                                else '更新'
+                            )
                         )
                     ),
                 )
@@ -201,7 +205,30 @@ async def resolve_task_selection(
             'error_message': None,
         }
 
+    if pending.operation == IntentType.DELETE_TASK:
+        return {
+            'pending_task_selection': None,
+            'candidate_tasks': [],
+            'selected_task': serialized,
+            'pending_route': 'selected_deletion',
+            'final_response': None,
+            'error_message': None,
+        }
+
     assert pending.target_status is not None
+    if (
+        selected.status.value == 'CANCELLED'
+        and pending.target_status.value != 'CANCELLED'
+    ):
+        return {
+            'pending_task_selection': None,
+            'candidate_tasks': [],
+            'selected_task': serialized,
+            'target_status': pending.target_status.value,
+            'pending_route': 'selected_update',
+            'final_response': None,
+            'error_message': None,
+        }
     confirmed_reopen = (
         selected.status.value == 'DONE'
         and pending.target_status.value == 'DOING'

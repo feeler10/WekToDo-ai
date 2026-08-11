@@ -108,7 +108,11 @@ async def resolve_task_reference(
                     operation_label=(
                         '拆解'
                         if operation == IntentType.DECOMPOSE_TASK
-                        else '更新'
+                        else (
+                            '删除'
+                            if operation == IntentType.DELETE_TASK
+                            else '更新'
+                        )
                     ),
                 )
             ),

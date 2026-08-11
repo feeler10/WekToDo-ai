@@ -53,6 +53,9 @@ class TaskAgentService:
             'pending_task_selection': previous.get(
                 'pending_task_selection'
             ),
+            'pending_task_delete_selection': previous.get(
+                'pending_task_delete_selection'
+            ),
             'intent': None,
             'intent_confidence': 0,
             'task_draft': None,
@@ -79,6 +82,16 @@ class TaskAgentService:
             'created_subtasks': [],
             'decomposition_message': None,
             'updated_task': None,
+            'deleted_task_id': None,
+            'deleted_task_ids': [],
+            'deletion_tasks': [],
+            'parent_tasks': [],
+            'task_delete_parse_result': None,
+            'task_delete_route': None,
+            'task_delete_selection_route': None,
+            'resolved_delete_parent_id': None,
+            'resolved_delete_references': {},
+            'restored_from_cancelled': False,
             'task_update_result': None,
             'task_update': None,
             'task_update_message': None,
@@ -155,6 +168,10 @@ class TaskAgentService:
                 message = str(final or '请确认任务属性修改')
             elif action_type == 'create_subtasks_batch':
                 message = str(final or '请确认任务拆解方案和批量创建')
+            elif action_type in {'delete_task', 'delete_tasks_batch'}:
+                message = str(final or '请确认永久删除任务')
+            elif action_type == 'restore_task':
+                message = str(final or '该任务已被取消，请确认是否先恢复为待办')
             else:
                 message = '请确认任务创建草稿'
         elif intent_result.get('needs_clarification') is True:
@@ -168,7 +185,12 @@ class TaskAgentService:
         elif error:
             status = 'error'
             message = str(final or error)
-        elif created or created_subtasks:
+        elif (
+            created
+            or created_subtasks
+            or values.get('deleted_task_id')
+            or values.get('deleted_task_ids')
+        ):
             status = 'completed'
             message = str(final or '任务已创建。')
         elif values.get('confirmation_status') == 'rejected':
@@ -217,6 +239,16 @@ class TaskAgentService:
                 if parent_data
                 else None
             ),
+            deleted_task_id=values.get('deleted_task_id'),
+            deleted_task_ids=list(values.get('deleted_task_ids') or []),
+            deletion_tasks=[
+                Task.model_validate(task)
+                for task in values.get('deletion_tasks') or []
+            ],
+            parent_tasks=[
+                Task.model_validate(task)
+                for task in values.get('parent_tasks') or []
+            ],
         )
 
     @staticmethod

@@ -262,6 +262,10 @@ p {
   margin-top: 12px;
 }
 
+.delete-details {
+  margin-top: 14px;
+}
+
 .confirmation-card {
   border-color: #dce4ff;
   background: #fbfcff;

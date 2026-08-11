@@ -43,7 +43,7 @@ def _state(message: str) -> dict[str, str]:
     [
         (
             IntentType.GENERAL_CHAT,
-            '你好！我可以帮你创建、查询、修改、完成或拆解任务。',
+            '你好！我可以帮你创建、查询、修改、完成、拆解或删除任务。',
         ),
         (
             IntentType.UPDATE_TASK,

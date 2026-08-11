@@ -18,6 +18,7 @@ from app.services.parser_factory import (
     create_subtask_planner,
     create_task_parser,
     create_task_update_parser,
+    create_task_delete_parser,
 )
 
 
@@ -51,6 +52,9 @@ def create_app(
                             pending_context_ttl_seconds=app_settings.pending_context_ttl_seconds,
                             parser=create_task_parser(app_settings),
                             task_update_parser=create_task_update_parser(
+                                app_settings
+                            ),
+                            task_delete_parser=create_task_delete_parser(
                                 app_settings
                             ),
                             subtask_planner=create_subtask_planner(

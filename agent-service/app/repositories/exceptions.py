@@ -20,3 +20,7 @@ class TaskRepositoryConcurrencyError(TaskRepositoryError):
 
 class TaskRepositoryConsistencyError(TaskRepositoryError):
     pass
+
+
+class TaskDeletionBlockedError(TaskRepositoryError):
+    pass

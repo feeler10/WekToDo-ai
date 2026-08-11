@@ -39,7 +39,7 @@ class IntentRecognitionService:
             reason='用户输入为空',
             needs_clarification=True,
             clarification_question=(
-                '请输入你想创建、查询、修改、完成或拆解的任务。'
+                '请输入你想创建、查询、修改、完成、拆解或删除的任务。'
             ),
         )
 

@@ -12,6 +12,11 @@ from app.schemas.subtask import (
     SubtaskBatchResult,
     TaskStatusUpdateResult,
 )
+from app.schemas.task_deletion import (
+    TaskDeleteBatch,
+    TaskDeleteBatchResult,
+    TaskDeleteResult,
+)
 
 
 class TaskRepository(ABC):
@@ -47,6 +52,7 @@ class TaskRepository(ABC):
         target_status: TaskStatus,
         expected_version: int,
         confirmed_reopen: bool = False,
+        confirmed_restore: bool = False,
         idempotency_key: str | None = None,
     ) -> Task:
         raise NotImplementedError
@@ -76,6 +82,7 @@ class TaskRepository(ABC):
         target_status: TaskStatus,
         expected_version: int,
         confirmed_reopen: bool = False,
+        confirmed_restore: bool = False,
         idempotency_key: str | None = None,
     ) -> TaskStatusUpdateResult:
         task = await self.update_status(
@@ -84,6 +91,25 @@ class TaskRepository(ABC):
             target_status=target_status,
             expected_version=expected_version,
             confirmed_reopen=confirmed_reopen,
+            confirmed_restore=confirmed_restore,
             idempotency_key=idempotency_key,
         )
         return TaskStatusUpdateResult(task=task)
+
+    async def delete(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> TaskDeleteResult:
+        raise NotImplementedError
+
+    async def delete_batch(
+        self,
+        batch: TaskDeleteBatch,
+        *,
+        idempotency_key: str,
+    ) -> TaskDeleteBatchResult:
+        raise NotImplementedError

@@ -78,3 +78,7 @@ class AgentResponse(BaseModel):
     subtask_plan: SubtaskPlan | None = None
     subtasks: list[Task] = Field(default_factory=list)
     parent_task: Task | None = None
+    deleted_task_id: str | None = None
+    deleted_task_ids: list[str] = Field(default_factory=list)
+    deletion_tasks: list[Task] = Field(default_factory=list)
+    parent_tasks: list[Task] = Field(default_factory=list)

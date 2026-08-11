@@ -12,6 +12,9 @@ from app.graph.nodes import (
     classify_intent,
     execute_create_task,
     execute_create_subtasks_batch,
+    execute_task_delete,
+    execute_task_delete_batch,
+    execute_task_restore,
     execute_status_update,
     execute_task_update,
     handle_error,
@@ -21,6 +24,10 @@ from app.graph.nodes import (
     parse_task_update,
     prepare_confirmation,
     prepare_subtask_confirmation,
+    prepare_task_delete,
+    prepare_task_delete_batch,
+    prepare_task_restore,
+    parse_task_delete,
     prepare_status_update,
     prepare_task_update,
     query_task_data,
@@ -28,6 +35,7 @@ from app.graph.nodes import (
     request_intent_clarification,
     resolve_query_clarification,
     resolve_task_selection,
+    resolve_task_delete_selection,
     route_pending_state,
     resolve_task_reference,
     respond_feature_unavailable,
@@ -39,10 +47,12 @@ from app.graph.nodes import (
 from app.graph.parser import TaskParser
 from app.graph.subtask_planner import SubtaskPlanner
 from app.graph.task_update_parser import TaskUpdateParser
+from app.graph.task_delete_parser import TaskDeleteParser
 from app.graph.routing import (
     route_after_classification,
     route_after_query_clarification,
     route_after_task_selection,
+    route_after_task_delete_selection,
     route_from_pending_state,
     route_after_confirmation,
     route_after_execution,
@@ -52,6 +62,8 @@ from app.graph.routing import (
     route_after_query,
     route_after_task_reference_resolution,
     route_after_task_update_parsing,
+    route_after_task_delete_parsing,
+    route_after_restore_execution,
     route_after_validation,
     route_after_decomposition_context,
     route_after_subtask_generation,
@@ -75,6 +87,7 @@ class GraphDependencies:
     pending_context_ttl_seconds: int = 900
     task_update_parser: TaskUpdateParser | None = None
     subtask_planner: SubtaskPlanner | None = None
+    task_delete_parser: TaskDeleteParser | None = None
 
 
 def build_task_graph(
@@ -150,7 +163,41 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
+    builder.add_node(
+        'resolve_task_delete_selection',
+        partial(
+            resolve_task_delete_selection,
+            repository=dependencies.task_repository,
+            clock=dependencies.clock,
+        ),
+    )
     builder.add_node('prepare_task_update', prepare_task_update)
+    builder.add_node(
+        'parse_task_delete',
+        partial(
+            parse_task_delete,
+            parser=dependencies.task_delete_parser,
+            clock=dependencies.clock,
+        ),
+    )
+    builder.add_node(
+        'prepare_task_delete',
+        partial(
+            prepare_task_delete,
+            repository=dependencies.task_repository,
+        ),
+    )
+    builder.add_node(
+        'prepare_task_delete_batch',
+        partial(
+            prepare_task_delete_batch,
+            repository=dependencies.task_repository,
+            task_matcher=task_matcher,
+            clock=dependencies.clock,
+            pending_ttl=pending_ttl,
+        ),
+    )
+    builder.add_node('prepare_task_restore', prepare_task_restore)
     builder.add_node(
         'load_decomposition_context',
         partial(
@@ -203,6 +250,27 @@ def build_task_graph(
             repository=dependencies.task_repository,
         ),
     )
+    builder.add_node(
+        'execute_task_delete',
+        partial(
+            execute_task_delete,
+            repository=dependencies.task_repository,
+        ),
+    )
+    builder.add_node(
+        'execute_task_delete_batch',
+        partial(
+            execute_task_delete_batch,
+            repository=dependencies.task_repository,
+        ),
+    )
+    builder.add_node(
+        'execute_task_restore',
+        partial(
+            execute_task_restore,
+            repository=dependencies.task_repository,
+        ),
+    )
     builder.add_node('handle_error', handle_error)
     builder.add_node(
         'request_intent_clarification',
@@ -226,6 +294,7 @@ def build_task_graph(
         {
             'classify_intent': 'classify_intent',
             'resolve_task_selection': 'resolve_task_selection',
+            'resolve_task_delete_selection': 'resolve_task_delete_selection',
             'resolve_query_clarification': 'resolve_query_clarification',
             'handle_error': 'handle_error',
         },
@@ -238,6 +307,8 @@ def build_task_graph(
             'prepare_status_update': 'prepare_status_update',
             'parse_task_update': 'parse_task_update',
             'load_decomposition_context': 'load_decomposition_context',
+            'prepare_task_delete': 'prepare_task_delete',
+            'prepare_task_restore': 'prepare_task_restore',
             'handle_error': 'handle_error',
             'end': END,
         },
@@ -250,6 +321,7 @@ def build_task_graph(
             'parse_task': 'parse_task',
             'query_task_data': 'query_task_data',
             'resolve_task_reference': 'resolve_task_reference',
+            'parse_task_delete': 'parse_task_delete',
             'request_intent_clarification': 'request_intent_clarification',
             'respond_to_general_chat': 'respond_to_general_chat',
             'respond_feature_unavailable': 'respond_feature_unavailable',
@@ -265,6 +337,7 @@ def build_task_graph(
             'parse_task': 'parse_task',
             'query_task_data': 'query_task_data',
             'resolve_task_reference': 'resolve_task_reference',
+            'parse_task_delete': 'parse_task_delete',
             'request_intent_clarification': 'request_intent_clarification',
             'respond_to_general_chat': 'respond_to_general_chat',
             'respond_feature_unavailable': 'respond_feature_unavailable',
@@ -287,6 +360,8 @@ def build_task_graph(
             'prepare_status_update': 'prepare_status_update',
             'parse_task_update': 'parse_task_update',
             'load_decomposition_context': 'load_decomposition_context',
+            'prepare_task_delete': 'prepare_task_delete',
+            'prepare_task_restore': 'prepare_task_restore',
             'handle_error': 'handle_error',
             'end': END,
         },
@@ -301,6 +376,16 @@ def build_task_graph(
         },
     )
     builder.add_conditional_edges(
+        'resolve_task_delete_selection',
+        route_after_task_delete_selection,
+        {
+            'prepare_task_delete_batch': 'prepare_task_delete_batch',
+            'classify_intent': 'classify_intent',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
         'parse_task_update',
         route_after_task_update_parsing,
         {
@@ -310,7 +395,44 @@ def build_task_graph(
         },
     )
     builder.add_conditional_edges(
+        'parse_task_delete',
+        route_after_task_delete_parsing,
+        {
+            'resolve_task_reference': 'resolve_task_reference',
+            'prepare_task_delete_batch': 'prepare_task_delete_batch',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
         'prepare_task_update',
+        route_after_preparation,
+        {
+            'request_confirmation': 'request_confirmation',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
+        'prepare_task_delete',
+        route_after_preparation,
+        {
+            'request_confirmation': 'request_confirmation',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
+        'prepare_task_delete_batch',
+        route_after_preparation,
+        {
+            'request_confirmation': 'request_confirmation',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
+        'prepare_task_restore',
         route_after_preparation,
         {
             'request_confirmation': 'request_confirmation',
@@ -391,6 +513,9 @@ def build_task_graph(
             'execute_status_update': 'execute_status_update',
             'execute_task_update': 'execute_task_update',
             'execute_create_subtasks_batch': 'execute_create_subtasks_batch',
+            'execute_task_delete': 'execute_task_delete',
+            'execute_task_delete_batch': 'execute_task_delete_batch',
+            'execute_task_restore': 'execute_task_restore',
             'edit': 'validate_task',
             'regenerate': 'parse_task',
             'edit_subtasks': 'validate_subtask_plan',
@@ -429,6 +554,33 @@ def build_task_graph(
         {
             'end': END,
             'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'execute_task_delete',
+        route_after_execution,
+        {
+            'end': END,
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'execute_task_delete_batch',
+        route_after_execution,
+        {
+            'end': END,
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'execute_task_restore',
+        route_after_restore_execution,
+        {
+            'parse_task_update': 'parse_task_update',
+            'load_decomposition_context': 'load_decomposition_context',
+            'prepare_status_update': 'prepare_status_update',
+            'handle_error': 'handle_error',
+            'end': END,
         },
     )
     builder.add_edge('handle_error', END)

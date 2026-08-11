@@ -135,7 +135,10 @@ def format_task_detail_response(
         facts.append(
             f'优先级为“{PRIORITY_LABELS[task.effective_priority]}”'
         )
-    return f'“{task.title}”' + '，'.join(facts) + '。'
+    response = f'“{task.title}”' + '，'.join(facts) + '。'
+    if task.status == TaskStatus.CANCELLED:
+        response += ' 该任务已被取消；如需修改、更新状态或拆解，请先恢复为待办。'
+    return response
 
 
 def format_zero_match_response(

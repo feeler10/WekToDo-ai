@@ -36,13 +36,30 @@ const isAttributeUpdate = computed(
 const isSubtaskBatch = computed(
   () => pending.value?.action_type === 'create_subtasks_batch',
 )
+const isTaskDelete = computed(
+  () => ['delete_task', 'delete_tasks_batch'].includes(
+    pending.value?.action_type || '',
+  ),
+)
+const isBatchDelete = computed(
+  () => pending.value?.action_type === 'delete_tasks_batch',
+)
+const isTaskRestore = computed(
+  () => pending.value?.action_type === 'restore_task',
+)
 const isRestrictedUpdate = computed(
-  () => isStatusUpdate.value || isAttributeUpdate.value,
+  () => isStatusUpdate.value
+    || isAttributeUpdate.value
+    || isTaskDelete.value
+    || isTaskRestore.value,
 )
 const confirmationTitle = computed(() => {
   if (isStatusUpdate.value) return '确认状态更新'
   if (isAttributeUpdate.value) return '确认属性修改'
   if (isSubtaskBatch.value) return '确认任务拆解方案'
+  if (isBatchDelete.value) return '确认批量永久删除'
+  if (isTaskDelete.value) return '确认永久删除任务'
+  if (isTaskRestore.value) return '确认恢复已取消任务'
   return '确认创建任务'
 })
 
@@ -293,7 +310,60 @@ function dependencyLabel(stepKey: string) {
       <span>{{ confirmationTitle }}</span>
     </template>
 
-    <template v-if='isStatusUpdate'>
+    <template v-if='isTaskDelete'>
+      <a-alert
+        type='error'
+        show-icon
+        message='该操作会永久删除任务，且无法恢复。'
+      />
+      <a-list
+        v-if='isBatchDelete'
+        class='delete-details'
+        size='small'
+        bordered
+        :data-source='response.deletion_tasks'
+      >
+        <template #renderItem='{ item }'>
+          <a-list-item>
+            <a-list-item-meta :description='`${item.status}${item.category ? ` · ${item.category}` : ""}`'>
+              <template #title>{{ item.title }}</template>
+            </a-list-item-meta>
+          </a-list-item>
+        </template>
+      </a-list>
+      <a-descriptions v-else class='delete-details' :column='1' size='small'>
+        <a-descriptions-item label='任务'>
+          {{ response.task?.title || pending?.target_id }}
+        </a-descriptions-item>
+        <a-descriptions-item label='任务 ID'>
+          {{ response.task?.id || pending?.target_id }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if='response.task' label='当前状态'>
+          {{ response.task.status }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if='response.parent_task' label='父任务影响'>
+          删除后将重新计算“{{ response.parent_task.title }}”的进度
+        </a-descriptions-item>
+      </a-descriptions>
+    </template>
+
+    <template v-else-if='isTaskRestore'>
+      <a-alert
+        type='warning'
+        show-icon
+        message='该任务已被取消，必须先恢复为待办，才能继续当前修改。'
+      />
+      <a-descriptions :column='1' size='small'>
+        <a-descriptions-item label='任务'>
+          {{ response.task?.title || pending?.target_id }}
+        </a-descriptions-item>
+        <a-descriptions-item label='状态变化'>
+          CANCELLED → TODO
+        </a-descriptions-item>
+      </a-descriptions>
+    </template>
+
+    <template v-else-if='isStatusUpdate'>
       <a-descriptions :column='1' size='small'>
         <a-descriptions-item label='任务'>
           {{ response.task?.title || pending?.target_id }}
@@ -502,7 +572,13 @@ function dependencyLabel(stepKey: string) {
         </a-button>
       </template>
       <template v-else>
-        <a-button danger :disabled='loading' @click='reject'>取消</a-button>
+        <a-button
+          :danger='!isTaskDelete'
+          :disabled='loading'
+          @click='reject'
+        >
+          取消
+        </a-button>
         <a-button
           v-if='!isRestrictedUpdate'
           :disabled='loading'
@@ -519,10 +595,11 @@ function dependencyLabel(stepKey: string) {
         </a-button>
         <a-button
           type='primary'
+          :danger='isTaskDelete'
           :loading='loading'
           @click='approve'
         >
-          确认
+          {{ isTaskDelete ? '确认永久删除' : (isTaskRestore ? '确认恢复' : '确认') }}
         </a-button>
       </template>
     </div>

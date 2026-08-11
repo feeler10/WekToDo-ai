@@ -25,11 +25,14 @@ def is_status_transition_allowed(
     target: TaskStatus,
     *,
     confirmed_reopen: bool = False,
+    confirmed_restore: bool = False,
 ) -> bool:
     if current == target:
         return True
     if current == TaskStatus.DONE and target == TaskStatus.DOING:
         return confirmed_reopen
+    if current == TaskStatus.CANCELLED and target == TaskStatus.TODO:
+        return confirmed_restore
     return target in _ALLOWED_TRANSITIONS[current]
 
 
@@ -38,10 +41,12 @@ def validate_status_transition(
     target: TaskStatus,
     *,
     confirmed_reopen: bool = False,
+    confirmed_restore: bool = False,
 ) -> None:
     if not is_status_transition_allowed(
         current,
         target,
         confirmed_reopen=confirmed_reopen,
+        confirmed_restore=confirmed_restore,
     ):
         raise InvalidTaskStatusTransition(current, target)

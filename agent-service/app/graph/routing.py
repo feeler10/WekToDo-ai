@@ -7,6 +7,7 @@ Route = Literal[
     'classify_intent',
     'resolve_query_clarification',
     'resolve_task_selection',
+    'resolve_task_delete_selection',
     'parse_task',
     'parse_task_update',
     'query_task_data',
@@ -29,6 +30,13 @@ Route = Literal[
     'validate_subtask_plan',
     'prepare_subtask_confirmation',
     'execute_create_subtasks_batch',
+    'prepare_task_delete',
+    'execute_task_delete',
+    'parse_task_delete',
+    'prepare_task_delete_batch',
+    'execute_task_delete_batch',
+    'prepare_task_restore',
+    'execute_task_restore',
     'edit_subtasks',
     'regenerate_subtasks',
     'edit',
@@ -42,6 +50,8 @@ def route_from_pending_state(state: TaskAgentState) -> Route:
     route = state.get('pending_route')
     if route == 'selection':
         return 'resolve_task_selection'
+    if route == 'delete_selection':
+        return 'resolve_task_delete_selection'
     if route == 'clarification':
         return 'resolve_query_clarification'
     if route == 'blocked':
@@ -65,12 +75,28 @@ def route_after_task_selection(state: TaskAgentState) -> Route:
         return 'handle_error'
     if state.get('pending_route') == 'classify':
         return 'classify_intent'
+    selected = state.get('selected_task') or {}
+    if (
+        selected.get('status') == 'CANCELLED'
+        and state.get('pending_route') in {
+            'selected_update',
+            'selected_attribute_update',
+            'selected_decomposition',
+        }
+        and not (
+            state.get('pending_route') == 'selected_update'
+            and state.get('target_status') == 'CANCELLED'
+        )
+    ):
+        return 'prepare_task_restore'
     if state.get('pending_route') == 'selected_update':
         return 'prepare_status_update'
     if state.get('pending_route') == 'selected_attribute_update':
         return 'parse_task_update'
     if state.get('pending_route') == 'selected_decomposition':
         return 'load_decomposition_context'
+    if state.get('pending_route') == 'selected_deletion':
+        return 'prepare_task_delete'
     return 'end'
 
 
@@ -91,6 +117,8 @@ def route_after_classification(state: TaskAgentState) -> Route:
         return 'resolve_task_reference'
     if state.get('intent') == IntentType.DECOMPOSE_TASK.value:
         return 'resolve_task_reference'
+    if state.get('intent') == IntentType.DELETE_TASK.value:
+        return 'parse_task_delete'
     if state.get('intent') == IntentType.GENERAL_CHAT.value:
         return 'respond_to_general_chat'
     return 'respond_unknown_intent'
@@ -106,11 +134,38 @@ def route_after_task_reference_resolution(state: TaskAgentState) -> Route:
     if state.get('error_message'):
         return 'handle_error'
     if state.get('selected_task'):
+        selected = state.get('selected_task') or {}
+        if (
+            selected.get('status') == 'CANCELLED'
+            and state.get('intent') in {
+                IntentType.UPDATE_TASK.value,
+                IntentType.UPDATE_TASK_STATUS.value,
+                IntentType.DECOMPOSE_TASK.value,
+            }
+            and not (
+                state.get('intent') == IntentType.UPDATE_TASK_STATUS.value
+                and state.get('target_status') == 'CANCELLED'
+            )
+        ):
+            return 'prepare_task_restore'
         if state.get('intent') == IntentType.DECOMPOSE_TASK.value:
             return 'load_decomposition_context'
         if state.get('intent') == IntentType.UPDATE_TASK.value:
             return 'parse_task_update'
+        if state.get('intent') == IntentType.DELETE_TASK.value:
+            return 'prepare_task_delete'
         return 'prepare_status_update'
+    return 'end'
+
+
+def route_after_task_delete_selection(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    route = state.get('task_delete_selection_route')
+    if route == 'resume':
+        return 'prepare_task_delete_batch'
+    if route == 'classify':
+        return 'classify_intent'
     return 'end'
 
 
@@ -120,6 +175,17 @@ def route_after_task_update_parsing(state: TaskAgentState) -> Route:
     if not state.get('task_update'):
         return 'end'
     return 'prepare_task_update'
+
+
+def route_after_task_delete_parsing(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    route = state.get('task_delete_route')
+    if route == 'single':
+        return 'resolve_task_reference'
+    if route == 'batch':
+        return 'prepare_task_delete_batch'
+    return 'end'
 
 
 def route_after_decomposition_context(state: TaskAgentState) -> Route:
@@ -178,6 +244,12 @@ def route_after_confirmation(state: TaskAgentState) -> Route:
             return 'execute_task_update'
         if pending.get('action_type') == 'create_subtasks_batch':
             return 'execute_create_subtasks_batch'
+        if pending.get('action_type') == 'delete_task':
+            return 'execute_task_delete'
+        if pending.get('action_type') == 'delete_tasks_batch':
+            return 'execute_task_delete_batch'
+        if pending.get('action_type') == 'restore_task':
+            return 'execute_task_restore'
         return 'execute_create_task'
     if action == 'edit':
         pending = state.get('pending_action') or {}
@@ -195,4 +267,17 @@ def route_after_confirmation(state: TaskAgentState) -> Route:
 def route_after_execution(state: TaskAgentState) -> Route:
     if state.get('error_message'):
         return 'handle_error'
+    return 'end'
+
+
+def route_after_restore_execution(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    intent = state.get('intent')
+    if intent == IntentType.UPDATE_TASK.value:
+        return 'parse_task_update'
+    if intent == IntentType.DECOMPOSE_TASK.value:
+        return 'load_decomposition_context'
+    if intent == IntentType.UPDATE_TASK_STATUS.value:
+        return 'prepare_status_update'
     return 'end'

@@ -68,6 +68,32 @@ async def test_real_redis_batch_create_and_parent_rollup() -> None:
         assert parent.status == TaskStatus.DONE
         assert parent.progress == 100
         assert parent.completed_at is not None
+
+        deleted = await repository.delete(
+            user_id='integration-user',
+            task_id=batch.subtasks[-1].id,
+            expected_version=3,
+            idempotency_key='delete:last-child',
+        )
+        replay = await repository.delete(
+            user_id='integration-user',
+            task_id=batch.subtasks[-1].id,
+            expected_version=3,
+            idempotency_key='delete:last-child',
+        )
+        remaining = await repository.list_children(
+            user_id='integration-user',
+            parent_id='parent',
+        )
+        assert [task.id for task in remaining] == [
+            task.id for task in batch.subtasks[:-1]
+        ]
+        assert deleted.parent_task is not None
+        assert deleted.parent_task.status == TaskStatus.DONE
+        assert deleted.parent_task.progress == 100
+        assert replay.replayed is True
+        assert replay.parent_task is not None
+        assert replay.parent_task.version == deleted.parent_task.version
     finally:
         keys = [key async for key in redis.scan_iter(match=f'{key_prefix}:*')]
         if keys:

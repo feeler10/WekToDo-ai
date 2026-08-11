@@ -110,6 +110,10 @@ export interface AgentResponse {
   subtask_plan: SubtaskPlan | null
   subtasks: Task[]
   parent_task: Task | null
+  deleted_task_id: string | null
+  deleted_task_ids: string[]
+  deletion_tasks: Task[]
+  parent_tasks: Task[]
 }
 
 export interface AgentChatRequest {

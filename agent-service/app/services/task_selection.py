@@ -18,6 +18,8 @@ _NEW_REQUEST_MARKERS = (
     '完成',
     '取消任务',
     '拆解',
+    '删除',
+    '移除',
 )
 _ORDINAL_PATTERN = re.compile(r'^第?([一二三四五六七八九十]|\d+)(?:个|项|条)?$')
 _CHINESE_ORDINALS = {

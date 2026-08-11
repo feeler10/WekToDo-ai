@@ -67,7 +67,7 @@ def request_intent_clarification(
 def respond_to_general_chat(state: TaskAgentState) -> dict[str, object]:
     return {
         'final_response': (
-            '你好！我可以帮你创建、查询、修改、完成或拆解任务。'
+            '你好！我可以帮你创建、查询、修改、完成、拆解或删除任务。'
         ),
         'error_message': None,
     }

@@ -100,6 +100,7 @@ class PendingTaskSelection(BaseModel):
             IntentType.UPDATE_TASK,
             IntentType.UPDATE_TASK_STATUS,
             IntentType.DECOMPOSE_TASK,
+            IntentType.DELETE_TASK,
         }
         if self.operation not in allowed:
             raise ValueError('operation must be a selectable task operation')
@@ -146,6 +147,16 @@ class PendingTaskSelection(BaseModel):
                 raise ValueError(
                     'task decomposition cannot carry task_update_message'
                 )
+        elif self.operation == IntentType.DELETE_TASK:
+            if self.include_subtasks:
+                raise ValueError('task deletion cannot request subtasks')
+            if (
+                self.query_plan is not None
+                or self.target_status is not None
+                or self.task_update_message is not None
+                or self.decomposition_message is not None
+            ):
+                raise ValueError('task deletion cannot carry unrelated data')
         else:
             if self.target_status is not None:
                 raise ValueError('query selection cannot carry target_status')

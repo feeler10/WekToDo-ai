@@ -14,6 +14,7 @@ class TaskAgentState(TypedDict, total=False):
     pending_route: str | None
     pending_query_clarification: dict[str, Any] | None
     pending_task_selection: dict[str, Any] | None
+    pending_task_delete_selection: dict[str, Any] | None
 
 
     parsed_task: dict[str, Any] | None
@@ -49,6 +50,16 @@ class TaskAgentState(TypedDict, total=False):
     created_subtasks: list[dict[str, Any]]
     decomposition_message: str | None
     updated_task: dict[str, Any] | None
+    deleted_task_id: str | None
+    deleted_task_ids: list[str]
+    deletion_tasks: list[dict[str, Any]]
+    parent_tasks: list[dict[str, Any]]
+    task_delete_parse_result: dict[str, Any] | None
+    task_delete_route: str | None
+    task_delete_selection_route: str | None
+    resolved_delete_parent_id: str | None
+    resolved_delete_references: dict[str, str]
+    restored_from_cancelled: bool
     task_update_result: dict[str, Any] | None
     task_update: dict[str, Any] | None
     task_update_message: str | None

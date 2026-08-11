@@ -7,6 +7,7 @@ from app.schemas.query_context import (
     PendingQueryClarification,
     PendingTaskSelection,
 )
+from app.schemas.task_deletion import PendingTaskDeleteSelection
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,17 @@ def route_pending_state(
             'error_message': '当前有待确认的任务操作，请先完成确认或取消。',
         }
     clarification_data = state.get('pending_query_clarification')
+    delete_selection_data = state.get('pending_task_delete_selection')
+    if delete_selection_data:
+        selection = PendingTaskDeleteSelection.model_validate(
+            delete_selection_data
+        )
+        if not _belongs_to_state(selection.user_id, selection.thread_id, state):
+            return {
+                'pending_task_delete_selection': None,
+                'pending_route': 'classify',
+            }
+        return {'pending_route': 'delete_selection'}
     if selection_data:
         selection = PendingTaskSelection.model_validate(selection_data)
         if not _belongs_to_state(selection.user_id, selection.thread_id, state):

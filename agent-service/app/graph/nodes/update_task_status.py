@@ -25,6 +25,7 @@ async def execute_status_update(
             target_status=payload.target_status,
             expected_version=payload.expected_version,
             confirmed_reopen=payload.confirmed_reopen,
+            confirmed_restore=payload.confirmed_restore,
             idempotency_key=pending.idempotency_key,
             confirmed=pending.confirmation_status == 'approved',
         )
