@@ -105,7 +105,7 @@ class IntentRecognitionContext(BaseModel):
 - `conversation_id`：当前 `thread_id`；
 - `user_id`：当前用户 ID。
 
-`recent_messages` 和 `metadata` 已预留，但当前 Graph 尚未填充它们，因此不能假设系统已经具备可靠的上下文指代消解能力。
+`recent_messages` 和 `metadata` 仍未注入 LLM。v0.2.3 按实际开发顺序统一收录三层跨轮能力：首先由结构化 `ActiveTaskContext` 保存同一用户和线程的短期焦点任务 ID；其次将候选草稿、有限输入、缺失字段和 TTL 写入 `PendingTaskDraftClarification`；最后使用共享待补充外层，在 `PendingTaskUpdateClarification` 中保存目标 ID、期望版本和最小修改结果。任务事实仍在每次恢复时从 Redis 重读。这些能力都不等于完整聊天历史、复数指代、跨线程记忆或长期语义记忆。
 
 ### 4.2 IntentResult
 

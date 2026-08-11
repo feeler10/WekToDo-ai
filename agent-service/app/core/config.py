@@ -37,6 +37,21 @@ class Settings(BaseSettings):
         TaskMatcherProvider.KEYWORD
     )
     pending_context_ttl_seconds: int = Field(default=900, ge=60, le=86400)
+    active_task_context_ttl_seconds: int = Field(
+        default=1800,
+        ge=60,
+        le=86400,
+    )
+    task_draft_clarification_max_rounds: int = Field(
+        default=4,
+        ge=1,
+        le=8,
+    )
+    task_update_clarification_max_rounds: int = Field(
+        default=4,
+        ge=1,
+        le=8,
+    )
     intent_model_temperature: float = Field(default=0, ge=0, le=2)
     intent_model_max_tokens: int = Field(default=200, ge=1)
     intent_model_enable_thinking: bool = False

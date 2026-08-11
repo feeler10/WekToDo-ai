@@ -4,7 +4,9 @@ from pydantic import ValidationError
 
 from app.graph.parser import ParsedTaskDraft
 from app.graph.state import TaskAgentState
+from app.schemas.draft import TaskDraft
 from app.schemas.task import TaskCreate
+from app.services.task_draft_clarification import missing_task_draft_fields
 
 
 def validate_task(state: TaskAgentState) -> dict[str, Any]:
@@ -26,7 +28,22 @@ def validate_task(state: TaskAgentState) -> dict[str, Any]:
         }
 
     try:
-        draft = ParsedTaskDraft.model_validate(raw_task)
+        candidate = ParsedTaskDraft.model_validate(raw_task)
+        missing_fields = missing_task_draft_fields(candidate)
+        if missing_fields:
+            return {
+                'task_draft': candidate.model_dump(mode='json'),
+                'parsed_task': None,
+                'validation_passed': False,
+                'missing_fields': [field.value for field in missing_fields],
+                'validation_errors': [],
+                'error_message': None,
+            }
+        draft = TaskDraft.model_validate(
+            candidate.model_dump(
+                exclude={'missing_fields', 'clarification_question'}
+            )
+        )
         task_create = TaskCreate(
             user_id=user_id,
             title=draft.title,

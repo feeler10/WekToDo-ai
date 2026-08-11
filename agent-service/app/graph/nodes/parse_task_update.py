@@ -7,6 +7,9 @@ from app.graph.task_update_parser import TaskUpdateParser
 from app.schemas.task import Task
 from app.schemas.task_attribute_update import TaskUpdateParseResult
 from app.services.task_attribute_update import build_task_update
+from app.services.task_update_clarification import (
+    format_task_update_collection_input,
+)
 
 
 async def parse_task_update(
@@ -20,6 +23,15 @@ async def parse_task_update(
     try:
         task = Task.model_validate(state.get('selected_task'))
         timezone_name = state.get('timezone', 'UTC')
+        task_update_inputs = list(state.get('task_update_inputs') or [])
+        if not task_update_inputs:
+            task_update_inputs = [
+                state.get('task_update_message')
+                or state.get('user_message', '')
+            ]
+        user_message = format_task_update_collection_input(
+            task_update_inputs
+        )
         current_datetime = clock()
         if (
             current_datetime.tzinfo is None
@@ -28,8 +40,7 @@ async def parse_task_update(
             raise ValueError('clock must return a timezone-aware datetime')
         parsed = TaskUpdateParseResult.model_validate(
             await parser.parse(
-                state.get('task_update_message')
-                or state.get('user_message', ''),
+                user_message,
                 current_task=task,
                 timezone=timezone_name,
                 current_datetime=current_datetime.astimezone(
@@ -41,7 +52,8 @@ async def parse_task_update(
             return {
                 'task_update_result': parsed.model_dump(mode='json'),
                 'task_update': None,
-                'final_response': parsed.clarification_question,
+                'task_update_inputs': task_update_inputs,
+                'final_response': None,
                 'error_message': None,
             }
         update = build_task_update(
@@ -54,6 +66,8 @@ async def parse_task_update(
     return {
         'task_update_result': parsed.model_dump(mode='json'),
         'task_update': update.model_dump(mode='json', exclude_unset=True),
+        'pending_task_update_clarification': None,
+        'task_update_inputs': task_update_inputs,
         'final_response': None,
         'error_message': None,
     }

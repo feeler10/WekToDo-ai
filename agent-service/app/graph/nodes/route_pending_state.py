@@ -8,6 +8,8 @@ from app.schemas.query_context import (
     PendingTaskSelection,
 )
 from app.schemas.task_deletion import PendingTaskDeleteSelection
+from app.schemas.task_draft_context import PendingTaskDraftClarification
+from app.schemas.task_update_context import PendingTaskUpdateClarification
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,12 @@ def route_pending_state(
         raise ValueError('clock must return a timezone-aware datetime')
 
     selection_data = state.get('pending_task_selection')
+    draft_clarification_data = state.get(
+        'pending_task_draft_clarification'
+    )
+    update_clarification_data = state.get(
+        'pending_task_update_clarification'
+    )
     if state.get('pending_action'):
         logger.warning(
             'PendingAction blocked ordinary graph entry user_id=%s '
@@ -32,6 +40,8 @@ def route_pending_state(
         return {
             'pending_task_selection': None,
             'pending_query_clarification': None,
+            'pending_task_draft_clarification': None,
+            'pending_task_update_clarification': None,
             'pending_route': 'blocked',
             'error_message': '当前有待确认的任务操作，请先完成确认或取消。',
         }
@@ -44,9 +54,15 @@ def route_pending_state(
         if not _belongs_to_state(selection.user_id, selection.thread_id, state):
             return {
                 'pending_task_delete_selection': None,
+                'pending_task_draft_clarification': None,
+                'pending_task_update_clarification': None,
                 'pending_route': 'classify',
             }
-        return {'pending_route': 'delete_selection'}
+        return {
+            'pending_task_draft_clarification': None,
+            'pending_task_update_clarification': None,
+            'pending_route': 'delete_selection',
+        }
     if selection_data:
         selection = PendingTaskSelection.model_validate(selection_data)
         if not _belongs_to_state(selection.user_id, selection.thread_id, state):
@@ -58,6 +74,8 @@ def route_pending_state(
             return {
                 'pending_task_selection': None,
                 'pending_query_clarification': None,
+                'pending_task_draft_clarification': None,
+                'pending_task_update_clarification': None,
                 'pending_route': 'classify',
             }
         update: dict[str, object] = {'pending_route': 'selection'}
@@ -68,6 +86,51 @@ def route_pending_state(
                 state.get('user_id'),
                 state.get('thread_id'),
             )
+            update['pending_query_clarification'] = None
+        if draft_clarification_data:
+            update['pending_task_draft_clarification'] = None
+        if update_clarification_data:
+            update['pending_task_update_clarification'] = None
+        return update
+
+    if update_clarification_data:
+        clarification = PendingTaskUpdateClarification.model_validate(
+            update_clarification_data
+        )
+        if not _belongs_to_state(
+            clarification.user_id,
+            clarification.thread_id,
+            state,
+        ):
+            return {
+                'pending_task_update_clarification': None,
+                'pending_route': 'classify',
+            }
+        update: dict[str, object] = {
+            'pending_route': 'task_update_clarification'
+        }
+        if clarification_data:
+            update['pending_query_clarification'] = None
+        if draft_clarification_data:
+            update['pending_task_draft_clarification'] = None
+        return update
+
+    if draft_clarification_data:
+        clarification = PendingTaskDraftClarification.model_validate(
+            draft_clarification_data
+        )
+        if not _belongs_to_state(
+            clarification.user_id,
+            clarification.thread_id,
+            state,
+        ):
+            return {
+                'pending_task_draft_clarification': None,
+                'pending_task_update_clarification': None,
+                'pending_route': 'classify',
+            }
+        update = {'pending_route': 'task_draft_clarification'}
+        if clarification_data:
             update['pending_query_clarification'] = None
         return update
 

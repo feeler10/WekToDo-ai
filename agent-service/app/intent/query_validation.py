@@ -1,11 +1,10 @@
-import re
-
 from app.intent.enums import ClarificationReason, IntentType, TimeScope
 from app.intent.models import (
     IntentRecognitionContext,
     IntentResult,
     TaskQueryIntent,
 )
+from app.intent.task_reference import is_contextual_task_reference
 from app.schemas.task import TaskStatus
 
 _UNFINISHED_STATUSES = {
@@ -13,21 +12,6 @@ _UNFINISHED_STATUSES = {
     TaskStatus.DOING,
     TaskStatus.BLOCKED,
 }
-_VAGUE_REFERENCE_PATTERN = re.compile(
-    r'(那个任务|这个任务|该任务|那项任务|这项任务|它)'
-)
-_VAGUE_REFERENCES = {
-    '那个',
-    '这个',
-    '那个任务',
-    '这个任务',
-    '该任务',
-    '那项任务',
-    '这项任务',
-    '它',
-}
-
-
 def validate_query_completeness(
     result: IntentResult,
     context: IntentRecognitionContext,
@@ -35,9 +19,8 @@ def validate_query_completeness(
     """Deterministically normalize clarification state for task queries."""
     if result.intent == IntentType.DECOMPOSE_TASK:
         reference = result.task_reference
-        if reference is None or _is_unresolved_reference(
-            reference,
-            context.message,
+        if reference is None or is_contextual_task_reference(
+            reference, context.message
         ):
             return result.model_copy(
                 update={
@@ -56,7 +39,7 @@ def validate_query_completeness(
         return result
 
     reference = result.task_reference
-    if _is_unresolved_reference(reference, context.message):
+    if is_contextual_task_reference(reference, context.message):
         return result.model_copy(
             update={
                 'task_reference': None,
@@ -117,13 +100,6 @@ def validate_query_completeness(
         )
 
     return _without_clarification(result.model_copy(update={'query': query}))
-
-
-def _is_unresolved_reference(reference: str | None, message: str) -> bool:
-    if reference is not None:
-        normalized = re.sub(r'[\s，,。！？!?]', '', reference).casefold()
-        return normalized in _VAGUE_REFERENCES
-    return _VAGUE_REFERENCE_PATTERN.search(message) is not None
 
 
 def _has_custom_range(query: TaskQueryIntent) -> bool:

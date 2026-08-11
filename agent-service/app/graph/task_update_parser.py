@@ -47,6 +47,7 @@ TASK_UPDATE_SYSTEM_PROMPT = '''你是任务管理系统中的任务属性修改�
 - 禁止修改 id、user_id、status、ai_priority、effective_priority、priority_source、urgency_score、progress、version、created_at、updated_at、completed_at。
 - 当前值只能来自 current_task，不得编造。
 - 只输出用户明确要求修改的字段，不能顺便优化或推断其他字段。
+- 如果用户消息包含多个标记轮次，它们属于同一次任务修改；应综合已完全确定的变更，并以后面轮次中的明确修正覆盖较早冲突内容。
 - SET 必须提供 value；CLEAR 的 value 必须为 null；title 不能 CLEAR；同一字段最多出现一次。
 
 字段规则：

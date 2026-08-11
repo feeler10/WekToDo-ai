@@ -6,6 +6,155 @@
 
 暂无。
 
+## [0.2.3] - 2026-08-11
+
+> 多轮对话基础能力统一版本：依次完成短期任务焦点、创建任务跨轮参数收集和修改任务跨轮参数收集。
+
+### 版本内实际开发总顺序
+
+1. 建立短期 `ActiveTaskContext` 与受控单数指代，为后续多轮流程提供不依赖完整聊天历史的任务焦点。
+2. 增加 `TaskDraftCandidate` 与 `PendingTaskDraftClarification`，完成创建任务缺失参数的跨轮收集。
+3. 抽取 `PendingOperationContextBase`，增加 `PendingTaskUpdateClarification`，完成修改任务字段和新值的跨轮收集。
+
+### 第一阶段：短期任务焦点与单数指代
+
+1. **确定第一阶段上下文范围**
+   - 只支持“它”“这个任务”“那个任务”“这项任务”“刚才的任务”等受控单数指代。
+   - 只接入任务详情查询、状态更新、普通属性修改和任务拆解，不实现复数指代、批量更新、跨线程记忆和完整聊天历史。
+
+2. **定义短期焦点契约**
+   - 新增 `ActiveTaskContext`，只保存 `user_id`、`thread_id`、`task_id`、`created_at` 和 `expires_at`。
+   - 新增 `ACTIVE_TASK_CONTEXT_TTL_SECONDS`，默认 1800 秒，通过 Settings 和 Graph 依赖注入。
+
+3. **增加受控指代识别**
+   - 新增独立任务指代识别函数，只在支持焦点的意图下处理受控单数指代。
+   - 显式任务名称或 ID 始终优先，不会被旧焦点覆盖。
+
+4. **接入焦点解析节点**
+   - 新增 `resolve_context_reference`，校验焦点用户/线程归属和 TTL，并将有效 `task_id` 交给现有任务匹配/定位链路。
+   - 焦点过期、归属不匹配或任务已删除时清理上下文，不猜测替代任务。
+
+5. **统一每轮焦点更新**
+   - 新增 `finalize_turn`，在唯一查询结果、任务创建、任务更新或候选选择完成后更新焦点。
+   - 普通列表返回多个任务、零匹配或当前任务已删除时清理焦点，防止旧上下文误引用。
+
+6. **改造 Graph 和服务恢复**
+   - 扩展 Graph State、Builder 与条件路由，在普通意图分支中先判断是否需要恢复受控指代。
+   - `TaskAgentService` 在每轮从 Checkpoint 恢复 `active_task_context`，且 Checkpoint 线程键继续包含编码后的 `user_id + thread_id`。
+   - 任务查询完整性与任务引用判定进行相应调整，使“它”类输入进入焦点解析，而不被误当作普通缺失引用。
+
+7. **同步文档和版本**
+   - 在 README、意图识别快速入门和开发计划中记录焦点边界、TTL、Redis 重读原则和明确延期项。
+   - 包版本更新为 `0.2.3`。
+
+#### 安全与可靠性
+
+- 焦点上下文只保存任务 ID 和归属/过期信息；任务事实始终从 Redis 重读。
+- 后续写操作继续执行现有的归属、确认、版本和幂等校验。
+- 复数指代、批量状态修改、上下文删除、跨线程记忆和完整聊天历史仍明确不在本阶段范围。
+
+#### Tests
+
+- 新增唯一焦点、显式覆盖、多结果清理、零结果、TTL、已删除任务、用户/线程隔离和未确认零写入测试。
+- 新增使用真实 Redis Checkpoint 重建 Graph 后恢复 `ActiveTaskContext` 的集成测试。
+- 后端完整测试结果：`335 passed`，真实 Redis 测试通过 IPv6 `[::1]` 执行。
+
+### 第二阶段：创建任务跨轮参数收集
+
+1. **冻结第一阶段范围**
+   - 在 `DEVELOPMENT_PLAN.md` 中定义第二阶段范围：只补齐创建任务所需参数，不引入通用聊天历史、长期记忆或自然语言确认。
+   - 明确标题缺失和模型明确标记的歧义字段才进入澄清，其他可选字段不被强制补齐。
+
+2. **分离候选草稿和最终草稿**
+   - 抽取 `TaskDraftFields`，保留创建任务的公共字段与评分。
+   - 新增允许标题缺失的 `TaskDraftCandidate`，包含 `missing_fields` 和 `clarification_question`。
+   - 保留标题必填的严格 `TaskDraft`，确保只有完整草稿才能进入确认和写入链路。
+
+3. **调整结构化创建解析**
+   - `StructuredOutputTaskParser` 改为输出 `TaskDraftCandidate`，标题缺失不再触发解析重试失败。
+   - Prompt 明确禁止编造标题或其他事实，缺失标题时返回 `title=null`，并在 `missing_fields` 中声明。
+   - Prompt 加入多轮标记输入的合并和较新明确修正覆盖规则。
+
+4. **增加创建草稿待补充上下文**
+   - 新增 `PendingTaskDraftClarification`，保存用户/线程归属、有限创建输入、当前候选草稿、缺失字段、澄清问题、轮次和 TTL。
+   - 增加缺失字段确定、中文澄清问题格式化、多轮输入标记与取消/新请求判定函数。
+
+5. **改造校验节点**
+   - `validate_task` 先校验宽松候选草稿；存在缺失字段时返回澄清状态，不再将缺少标题当作系统错误。
+   - 字段完整后再转换为严格 `TaskDraft` 和 `TaskCreate`，原有优先级计算、创建预览和 Human-in-the-loop 确认保持不变。
+
+6. **接入 LangGraph 跨轮路由**
+   - 新增 `prepare_task_draft_clarification` 和 `resolve_task_draft_clarification`，分别负责写入待补充状态和下一轮恢复。
+   - 扩展 Graph State、Builder 和条件路由；待确认动作、删除选择和任务候选选择继续高于草稿补齐。
+   - 后续普通补充直接回到 `parse_task`；取消、明确新请求、TTL 过期和轮数超限均会清理草稿上下文。
+
+7. **接入 API 状态与配置**
+   - `TaskAgentService` 在每轮恢复 `pending_task_draft_clarification`，对外返回 `needs_clarification` 和当前追问。
+   - 新增 `TASK_DRAFT_CLARIFICATION_MAX_ROUNDS`，默认 4，合法范围 1—8；复用 `PENDING_CONTEXT_TTL_SECONDS` 作为操作级短期 TTL。
+   - 同步 `.env.example`、README、意图识别快速入门和开发计划，作为 `0.2.3` 的第二阶段内容。
+
+#### 安全与可靠性
+
+- 补齐过程不调用任务写工具；只有候选草稿转换为严格草稿、通过确定性校验并获得 Human-in-the-loop 批准后才写 Redis。
+- 待补充状态严格绑定 `user_id + thread_id`，且受有限输入数、TTL 和最大轮数限制。
+- 本阶段不引入通用聊天历史、长期记忆、自然语言确认或全局 `Pending*` 迁移。
+
+#### Tests
+
+- 先调整结构化解析和 Graph 旧测试，将“缺少标题报错”改为“保存草稿并追问”。
+- 新增一次/多次补充、后续改口、取消、新查询替换、TTL、轮数上限、用户/线程隔离、确认前零写入与确认后单次创建测试。
+- 新增真实 Redis `PendingTaskDraftClarification` Checkpoint 重建 Graph 后恢复并继续创建的集成测试。
+- 后端完整测试结果：`346 passed`，真实 Redis 测试通过 IPv6 `[::1]` 执行。
+
+### 第三阶段：通用待补充外层与修改任务跨轮参数收集
+
+1. **确认修改链路断点**
+   - 复现了“修改接水任务 → 标题”后第二轮被重新归类为普通对话的问题。
+   - 确认原因是 `TaskUpdateParseResult` 只返回澄清问题，没有把已定位任务和本次修改状态写入 Checkpoint。
+   - 在 `DEVELOPMENT_PLAN.md` 固化第三阶段范围：只实现单任务普通属性修改的跨轮收集，不扩展可修改字段和高风险操作。
+
+2. **抽取通用待补充外层**
+   - 新增 `PendingOperationContextBase`，统一 `user_id`、`thread_id`、有限 `user_inputs`、`clarification_round`、`created_at` 和 `expires_at`。
+   - 将已有 `PendingTaskDraftClarification` 调整为继承该外层，保持创建任务的 Checkpoint 字段格式和业务行为不变。
+   - 新增通用的有限输入组合、取消识别和明确新请求判定函数，创建和修改使用各自的操作语义。
+
+3. **定义修改任务专用状态**
+   - 新增 `PendingTaskUpdateClarification`，在通用外层上保存 `task_id`、`expected_version` 和已确定的 `partial_result`。
+   - 扩展 `TaskAgentState` 与 `TaskAgentService` 恢复逻辑，增加 `pending_task_update_clarification`、`task_update_inputs` 和修改澄清轮次。
+   - Agent API 在存在待补充修改时继续返回 `needs_clarification`，不再退化为普通对话。
+
+4. **让修改解析器支持多轮输入**
+   - `parse_task_update` 改为组合本次修改的所有受限输入，并在每轮重新生成最小结构化补丁。
+   - 修改解析 Prompt 增加“各标记轮次属于同一次修改”与“较新明确值覆盖较早冲突值”规则。
+   - 保留已确定且互不依赖的变更；字段、新值或时间仍不明确时继续澄清。
+
+5. **接入 LangGraph 准备与恢复节点**
+   - 新增 `prepare_task_update_clarification`，保存目标 ID、期望版本、已解析结果、输入、问题、轮次和 TTL。
+   - 新增 `resolve_task_update_clarification`，处理取消、明确新请求替换、过期、任务失效和版本冲突。
+   - 补充文本被识别为当前修改的续输入时，直接回到 `parse_task_update`，不再重新执行普通意图识别。
+
+6. **补全路由优先级与结束条件**
+   - 在 `route_pending_state` 中把待确认动作和候选任务选择继续作为更高优先级，其后才恢复修改参数收集。
+   - 修改解析结果仍需澄清时进入准备节点；完整时进入原有 `prepare_task_update` 和 Interrupt/Resume 确认链路。
+   - 达到最大轮数、用户取消或上下文失效后清理待补充状态，不留下可被误恢复的旧补丁。
+
+7. **接入配置、版本和文档**
+   - 新增 `TASK_UPDATE_CLARIFICATION_MAX_ROUNDS`，默认 4，合法范围为 1—8。
+   - 配置经 `Settings` 注入 `GraphDependencies`，同步 `.env.example`、README、意图识别快速入门和开发计划，最终统一发布为 `0.2.3`。
+
+#### 安全与可靠性
+
+- Checkpoint 只保存目标任务 ID、期望版本和最小修改结果，不把旧任务属性当作真实状态。
+- 每次恢复都按 `user_id + task_id` 从 Redis 重读任务并检查 `expected_version`；任务被删除或版本变化时立即停止旧流程。
+- 参数收集和修改预览阶段零写入；批准后仍执行归属、版本、状态、确认和幂等校验。
+
+#### Tests
+
+- 先使用内存 Checkpoint 复现并验收“修改接水任务 → 标题 → 改成每天早上接水 → 确认”完整链路。
+- 新增取消、新查询替换、TTL、轮数上限、版本冲突、用户/线程隔离和确认前零写入测试。
+- 新增真实 Redis `PendingTaskUpdateClarification` Checkpoint 重建 Graph 后恢复、进入确认并完成写入的集成测试。
+- 后端完整测试结果：`354 passed`，真实 Redis 测试通过 IPv6 `[::1]` 执行。
+
 ## [0.2.2] - 2026-08-11
 
 > 自然语言批量删除、父子范围删除与已取消任务恢复。

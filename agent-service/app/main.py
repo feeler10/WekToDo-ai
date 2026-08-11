@@ -50,6 +50,15 @@ def create_app(
                     graph = build_task_graph(
                         GraphDependencies(
                             pending_context_ttl_seconds=app_settings.pending_context_ttl_seconds,
+                            active_task_context_ttl_seconds=(
+                                app_settings.active_task_context_ttl_seconds
+                            ),
+                              task_draft_clarification_max_rounds=(
+                                  app_settings.task_draft_clarification_max_rounds
+                              ),
+                              task_update_clarification_max_rounds=(
+                                  app_settings.task_update_clarification_max_rounds
+                              ),
                             parser=create_task_parser(app_settings),
                             task_update_parser=create_task_update_parser(
                                 app_settings

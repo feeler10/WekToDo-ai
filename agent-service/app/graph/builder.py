@@ -17,6 +17,7 @@ from app.graph.nodes import (
     execute_task_restore,
     execute_status_update,
     execute_task_update,
+    finalize_turn,
     handle_error,
     generate_subtask_plan,
     load_decomposition_context,
@@ -27,14 +28,19 @@ from app.graph.nodes import (
     prepare_task_delete,
     prepare_task_delete_batch,
     prepare_task_restore,
+    prepare_task_draft_clarification,
+    prepare_task_update_clarification,
     parse_task_delete,
     prepare_status_update,
     prepare_task_update,
     query_task_data,
     request_confirmation,
     request_intent_clarification,
+    resolve_context_reference,
     resolve_query_clarification,
     resolve_task_selection,
+    resolve_task_draft_clarification,
+    resolve_task_update_clarification,
     resolve_task_delete_selection,
     route_pending_state,
     resolve_task_reference,
@@ -50,8 +56,13 @@ from app.graph.task_update_parser import TaskUpdateParser
 from app.graph.task_delete_parser import TaskDeleteParser
 from app.graph.routing import (
     route_after_classification,
+    route_after_context_reference,
     route_after_query_clarification,
     route_after_task_selection,
+    route_after_task_draft_clarification,
+    route_after_task_draft_clarification_preparation,
+    route_after_task_update_clarification,
+    route_after_task_update_clarification_preparation,
     route_after_task_delete_selection,
     route_from_pending_state,
     route_after_confirmation,
@@ -85,6 +96,9 @@ class GraphDependencies:
     clock: Callable[[], datetime] = utc_now
     task_matcher: TaskMatcher | None = None
     pending_context_ttl_seconds: int = 900
+    active_task_context_ttl_seconds: int = 1800
+    task_draft_clarification_max_rounds: int = 4
+    task_update_clarification_max_rounds: int = 4
     task_update_parser: TaskUpdateParser | None = None
     subtask_planner: SubtaskPlanner | None = None
     task_delete_parser: TaskDeleteParser | None = None
@@ -99,6 +113,9 @@ def build_task_graph(
     task_matcher = dependencies.task_matcher or create_task_matcher()
     pending_ttl = timedelta(
         seconds=dependencies.pending_context_ttl_seconds
+    )
+    active_task_ttl = timedelta(
+        seconds=dependencies.active_task_context_ttl_seconds
     )
     builder.add_node(
         'route_pending_state',
@@ -164,6 +181,25 @@ def build_task_graph(
         ),
     )
     builder.add_node(
+        'resolve_task_draft_clarification',
+        partial(
+            resolve_task_draft_clarification,
+            clock=dependencies.clock,
+        ),
+    )
+    builder.add_node(
+        'resolve_task_update_clarification',
+        partial(
+            resolve_task_update_clarification,
+            repository=dependencies.task_repository,
+            clock=dependencies.clock,
+        ),
+    )
+    builder.add_node(
+        'resolve_context_reference',
+        partial(resolve_context_reference, clock=dependencies.clock),
+    )
+    builder.add_node(
         'resolve_task_delete_selection',
         partial(
             resolve_task_delete_selection,
@@ -221,6 +257,24 @@ def build_task_graph(
         prepare_subtask_confirmation,
     )
     builder.add_node('prepare_confirmation', prepare_confirmation)
+    builder.add_node(
+        'prepare_task_draft_clarification',
+        partial(
+            prepare_task_draft_clarification,
+            clock=dependencies.clock,
+            pending_ttl=pending_ttl,
+            max_rounds=dependencies.task_draft_clarification_max_rounds,
+        ),
+    )
+    builder.add_node(
+        'prepare_task_update_clarification',
+        partial(
+            prepare_task_update_clarification,
+            clock=dependencies.clock,
+            pending_ttl=pending_ttl,
+            max_rounds=dependencies.task_update_clarification_max_rounds,
+        ),
+    )
     builder.add_node('request_confirmation', request_confirmation)
     builder.add_node(
         'execute_create_task',
@@ -286,6 +340,14 @@ def build_task_graph(
         respond_feature_unavailable,
     )
     builder.add_node('respond_unknown_intent', respond_unknown_intent)
+    builder.add_node(
+        'finalize_turn',
+        partial(
+            finalize_turn,
+            clock=dependencies.clock,
+            context_ttl=active_task_ttl,
+        ),
+    )
 
     builder.add_edge(START, 'route_pending_state')
     builder.add_conditional_edges(
@@ -296,7 +358,33 @@ def build_task_graph(
             'resolve_task_selection': 'resolve_task_selection',
             'resolve_task_delete_selection': 'resolve_task_delete_selection',
             'resolve_query_clarification': 'resolve_query_clarification',
+            'resolve_task_draft_clarification': (
+                'resolve_task_draft_clarification'
+            ),
+            'resolve_task_update_clarification': (
+                'resolve_task_update_clarification'
+            ),
             'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'resolve_task_update_clarification',
+        route_after_task_update_clarification,
+        {
+            'classify_intent': 'classify_intent',
+            'parse_task_update': 'parse_task_update',
+            'handle_error': 'handle_error',
+            'end': 'finalize_turn',
+        },
+    )
+    builder.add_conditional_edges(
+        'resolve_task_draft_clarification',
+        route_after_task_draft_clarification,
+        {
+            'classify_intent': 'classify_intent',
+            'parse_task': 'parse_task',
+            'handle_error': 'handle_error',
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -310,7 +398,7 @@ def build_task_graph(
             'prepare_task_delete': 'prepare_task_delete',
             'prepare_task_restore': 'prepare_task_restore',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -326,8 +414,9 @@ def build_task_graph(
             'respond_to_general_chat': 'respond_to_general_chat',
             'respond_feature_unavailable': 'respond_feature_unavailable',
             'respond_unknown_intent': 'respond_unknown_intent',
+            'resolve_context_reference': 'resolve_context_reference',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -342,6 +431,17 @@ def build_task_graph(
             'respond_to_general_chat': 'respond_to_general_chat',
             'respond_feature_unavailable': 'respond_feature_unavailable',
             'respond_unknown_intent': 'respond_unknown_intent',
+            'resolve_context_reference': 'resolve_context_reference',
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'resolve_context_reference',
+        route_after_context_reference,
+        {
+            'query_task_data': 'query_task_data',
+            'resolve_task_reference': 'resolve_task_reference',
+            'request_intent_clarification': 'request_intent_clarification',
             'handle_error': 'handle_error',
         },
     )
@@ -350,7 +450,7 @@ def build_task_graph(
         route_after_query,
         {
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -363,7 +463,7 @@ def build_task_graph(
             'prepare_task_delete': 'prepare_task_delete',
             'prepare_task_restore': 'prepare_task_restore',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -372,7 +472,7 @@ def build_task_graph(
         {
             'request_confirmation': 'request_confirmation',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -382,7 +482,7 @@ def build_task_graph(
             'prepare_task_delete_batch': 'prepare_task_delete_batch',
             'classify_intent': 'classify_intent',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -390,8 +490,19 @@ def build_task_graph(
         route_after_task_update_parsing,
         {
             'prepare_task_update': 'prepare_task_update',
+            'prepare_task_update_clarification': (
+                'prepare_task_update_clarification'
+            ),
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
+        },
+    )
+    builder.add_conditional_edges(
+        'prepare_task_update_clarification',
+        route_after_task_update_clarification_preparation,
+        {
+            'handle_error': 'handle_error',
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -401,7 +512,7 @@ def build_task_graph(
             'resolve_task_reference': 'resolve_task_reference',
             'prepare_task_delete_batch': 'prepare_task_delete_batch',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -410,7 +521,7 @@ def build_task_graph(
         {
             'request_confirmation': 'request_confirmation',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -419,7 +530,7 @@ def build_task_graph(
         {
             'request_confirmation': 'request_confirmation',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -428,7 +539,7 @@ def build_task_graph(
         {
             'request_confirmation': 'request_confirmation',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -437,7 +548,7 @@ def build_task_graph(
         {
             'request_confirmation': 'request_confirmation',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -470,7 +581,7 @@ def build_task_graph(
         {
             'request_confirmation': 'request_confirmation',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -486,7 +597,18 @@ def build_task_graph(
         route_after_validation,
         {
             'calculate_priority': 'calculate_priority',
+            'prepare_task_draft_clarification': (
+                'prepare_task_draft_clarification'
+            ),
             'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'prepare_task_draft_clarification',
+        route_after_task_draft_clarification_preparation,
+        {
+            'handle_error': 'handle_error',
+            'end': 'finalize_turn',
         },
     )
     builder.add_conditional_edges(
@@ -520,7 +642,7 @@ def build_task_graph(
             'regenerate': 'parse_task',
             'edit_subtasks': 'validate_subtask_plan',
             'regenerate_subtasks': 'generate_subtask_plan',
-            'reject': END,
+            'reject': 'finalize_turn',
             'handle_error': 'handle_error',
         },
     )
@@ -528,7 +650,7 @@ def build_task_graph(
         'execute_create_task',
         route_after_execution,
         {
-            'end': END,
+            'end': 'finalize_turn',
             'handle_error': 'handle_error',
         },
     )
@@ -536,7 +658,7 @@ def build_task_graph(
         'execute_status_update',
         route_after_execution,
         {
-            'end': END,
+            'end': 'finalize_turn',
             'handle_error': 'handle_error',
         },
     )
@@ -544,7 +666,7 @@ def build_task_graph(
         'execute_create_subtasks_batch',
         route_after_execution,
         {
-            'end': END,
+            'end': 'finalize_turn',
             'handle_error': 'handle_error',
         },
     )
@@ -552,7 +674,7 @@ def build_task_graph(
         'execute_task_update',
         route_after_execution,
         {
-            'end': END,
+            'end': 'finalize_turn',
             'handle_error': 'handle_error',
         },
     )
@@ -560,7 +682,7 @@ def build_task_graph(
         'execute_task_delete',
         route_after_execution,
         {
-            'end': END,
+            'end': 'finalize_turn',
             'handle_error': 'handle_error',
         },
     )
@@ -568,7 +690,7 @@ def build_task_graph(
         'execute_task_delete_batch',
         route_after_execution,
         {
-            'end': END,
+            'end': 'finalize_turn',
             'handle_error': 'handle_error',
         },
     )
@@ -580,12 +702,13 @@ def build_task_graph(
             'load_decomposition_context': 'load_decomposition_context',
             'prepare_status_update': 'prepare_status_update',
             'handle_error': 'handle_error',
-            'end': END,
+            'end': 'finalize_turn',
         },
     )
-    builder.add_edge('handle_error', END)
-    builder.add_edge('request_intent_clarification', END)
-    builder.add_edge('respond_to_general_chat', END)
-    builder.add_edge('respond_feature_unavailable', END)
-    builder.add_edge('respond_unknown_intent', END)
+    builder.add_edge('handle_error', 'finalize_turn')
+    builder.add_edge('request_intent_clarification', 'finalize_turn')
+    builder.add_edge('respond_to_general_chat', 'finalize_turn')
+    builder.add_edge('respond_feature_unavailable', 'finalize_turn')
+    builder.add_edge('respond_unknown_intent', 'finalize_turn')
+    builder.add_edge('finalize_turn', END)
     return builder.compile(checkpointer=checkpointer)

@@ -2,12 +2,17 @@ from typing import Literal
 
 from app.graph.state import TaskAgentState
 from app.intent.enums import IntentType
+from app.intent.task_reference import is_contextual_task_reference
+from app.services.task_context import supports_active_task_context
 
 Route = Literal[
     'classify_intent',
     'resolve_query_clarification',
     'resolve_task_selection',
     'resolve_task_delete_selection',
+    'resolve_context_reference',
+    'resolve_task_draft_clarification',
+    'resolve_task_update_clarification',
     'parse_task',
     'parse_task_update',
     'query_task_data',
@@ -36,6 +41,8 @@ Route = Literal[
     'prepare_task_delete_batch',
     'execute_task_delete_batch',
     'prepare_task_restore',
+    'prepare_task_draft_clarification',
+    'prepare_task_update_clarification',
     'execute_task_restore',
     'edit_subtasks',
     'regenerate_subtasks',
@@ -54,9 +61,39 @@ def route_from_pending_state(state: TaskAgentState) -> Route:
         return 'resolve_task_delete_selection'
     if route == 'clarification':
         return 'resolve_query_clarification'
+    if route == 'task_draft_clarification':
+        return 'resolve_task_draft_clarification'
+    if route == 'task_update_clarification':
+        return 'resolve_task_update_clarification'
     if route == 'blocked':
         return 'handle_error'
     return 'classify_intent'
+
+
+def route_after_task_draft_clarification(
+    state: TaskAgentState,
+) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    route = state.get('pending_route')
+    if route == 'classify':
+        return 'classify_intent'
+    if route == 'draft_resume':
+        return 'parse_task'
+    return 'end'
+
+
+def route_after_task_update_clarification(
+    state: TaskAgentState,
+) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    route = state.get('pending_route')
+    if route == 'classify':
+        return 'classify_intent'
+    if route == 'task_update_resume':
+        return 'parse_task_update'
+    return 'end'
 
 
 def route_after_query_clarification(state: TaskAgentState) -> Route:
@@ -105,6 +142,14 @@ def route_after_classification(state: TaskAgentState) -> Route:
     if state.get('error_message'):
         return 'handle_error'
     result = state.get('intent_result') or {}
+    if (
+        supports_active_task_context(state.get('intent'))
+        and is_contextual_task_reference(
+            result.get('task_reference'),
+            state.get('user_message', ''),
+        )
+    ):
+        return 'resolve_context_reference'
     if result.get('needs_clarification') is True:
         return 'request_intent_clarification'
     if state.get('intent') == IntentType.CREATE_TASK.value:
@@ -122,6 +167,23 @@ def route_after_classification(state: TaskAgentState) -> Route:
     if state.get('intent') == IntentType.GENERAL_CHAT.value:
         return 'respond_to_general_chat'
     return 'respond_unknown_intent'
+
+
+def route_after_context_reference(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    result = state.get('intent_result') or {}
+    if result.get('needs_clarification') is True:
+        return 'request_intent_clarification'
+    if state.get('intent') == IntentType.QUERY_TASKS.value:
+        return 'query_task_data'
+    if state.get('intent') in {
+        IntentType.UPDATE_TASK_STATUS.value,
+        IntentType.UPDATE_TASK.value,
+        IntentType.DECOMPOSE_TASK.value,
+    }:
+        return 'resolve_task_reference'
+    return 'handle_error'
 
 
 def route_after_query(state: TaskAgentState) -> Route:
@@ -172,9 +234,20 @@ def route_after_task_delete_selection(state: TaskAgentState) -> Route:
 def route_after_task_update_parsing(state: TaskAgentState) -> Route:
     if state.get('error_message'):
         return 'handle_error'
+    result = state.get('task_update_result') or {}
+    if result.get('needs_clarification') is True:
+        return 'prepare_task_update_clarification'
     if not state.get('task_update'):
         return 'end'
     return 'prepare_task_update'
+
+
+def route_after_task_update_clarification_preparation(
+    state: TaskAgentState,
+) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    return 'end'
 
 
 def route_after_task_delete_parsing(state: TaskAgentState) -> Route:
@@ -213,9 +286,21 @@ def route_after_parsing(state: TaskAgentState) -> Route:
 
 
 def route_after_validation(state: TaskAgentState) -> Route:
-    if state.get('error_message') or not state.get('validation_passed'):
+    if state.get('error_message'):
+        return 'handle_error'
+    if not state.get('validation_passed'):
+        if state.get('missing_fields'):
+            return 'prepare_task_draft_clarification'
         return 'handle_error'
     return 'calculate_priority'
+
+
+def route_after_task_draft_clarification_preparation(
+    state: TaskAgentState,
+) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    return 'end'
 
 
 def route_after_priority(state: TaskAgentState) -> Route:

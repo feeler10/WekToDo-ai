@@ -56,6 +56,17 @@ class TaskAgentService:
             'pending_task_delete_selection': previous.get(
                 'pending_task_delete_selection'
             ),
+            'pending_task_draft_clarification': previous.get(
+                'pending_task_draft_clarification'
+            ),
+            'pending_task_update_clarification': previous.get(
+                'pending_task_update_clarification'
+            ),
+            'active_task_context': previous.get('active_task_context'),
+            'task_collection_inputs': [],
+            'task_draft_clarification_round': 0,
+            'task_update_inputs': [],
+            'task_update_clarification_round': 0,
             'intent': None,
             'intent_confidence': 0,
             'task_draft': None,
@@ -182,6 +193,12 @@ class TaskAgentService:
             message = str(
                 final or task_update_result.get('clarification_question')
             )
+        elif values.get('pending_task_draft_clarification'):
+            status = 'needs_clarification'
+            message = str(final or '请补充创建任务所需的信息。')
+        elif values.get('pending_task_update_clarification'):
+            status = 'needs_clarification'
+            message = str(final or '请补充任务修改所需的信息。')
         elif error:
             status = 'error'
             message = str(final or error)

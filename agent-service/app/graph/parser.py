@@ -5,11 +5,11 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from app.schemas.draft import TaskDraft
+from app.schemas.draft import TaskDraftCandidate
 from app.schemas.task import utc_now
 
 
-ParsedTaskDraft = TaskDraft
+ParsedTaskDraft = TaskDraftCandidate
 StructuredOutputMethod = Literal[
     'json_schema',
     'function_calling',
@@ -71,7 +71,7 @@ class StructuredOutputTaskParser:
         timezone: str,
     ) -> Mapping[str, Any]:
         runnable = self._model_factory().with_structured_output(
-            TaskDraft,
+            TaskDraftCandidate,
             method=self._method,
         )
         validation_feedback = ''
@@ -87,8 +87,8 @@ class StructuredOutputTaskParser:
                 output = await runnable.ainvoke(prompt)
                 draft = (
                     output
-                    if isinstance(output, TaskDraft)
-                    else TaskDraft.model_validate(output)
+                    if isinstance(output, TaskDraftCandidate)
+                    else TaskDraftCandidate.model_validate(output)
                 )
                 return draft.model_dump(mode='json')
             except (ValidationError, TypeError, ValueError) as exc:
@@ -115,7 +115,7 @@ class StructuredOutputTaskParser:
         format_instruction = ''
         if self._method == 'json_mode':
             schema = json.dumps(
-                TaskDraft.model_json_schema(),
+                TaskDraftCandidate.model_json_schema(),
                 ensure_ascii=False,
                 separators=(',', ':'),
             )
@@ -129,6 +129,13 @@ class StructuredOutputTaskParser:
             'All datetimes must include a UTC offset. '
             f'The user timezone is {timezone}; current UTC time is {now.isoformat()}. '
             'Scores must be integers from 0 to 100. '
+            'Do not invent a title or other facts the user did not provide. '
+            'If no identifiable task title is available, return title=null and '
+            'include "title" in missing_fields. If an explicitly mentioned '
+            'field is ambiguous and blocks a reliable draft, include that field '
+            'in missing_fields and provide one concise clarification_question. '
+            'When the user supplies corrections across multiple labeled rounds, '
+            'later explicit values override earlier conflicting values. '
             f'{validation_feedback}'
         )
         return [('system', system), ('human', user_message)]

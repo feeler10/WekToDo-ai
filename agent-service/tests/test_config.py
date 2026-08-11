@@ -45,10 +45,53 @@ def test_pending_context_ttl_has_bounded_default() -> None:
     settings = Settings(app_env='test', _env_file=None)
 
     assert settings.pending_context_ttl_seconds == 900
+    assert settings.active_task_context_ttl_seconds == 1800
 
     with pytest.raises(ValidationError):
         Settings(
             app_env='test',
             pending_context_ttl_seconds=30,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            active_task_context_ttl_seconds=30,
+            _env_file=None,
+        )
+
+
+def test_task_draft_clarification_rounds_have_bounded_default() -> None:
+    settings = Settings(app_env='test', _env_file=None)
+
+    assert settings.task_draft_clarification_max_rounds == 4
+    assert settings.task_update_clarification_max_rounds == 4
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            task_draft_clarification_max_rounds=0,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            task_draft_clarification_max_rounds=9,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            task_update_clarification_max_rounds=0,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            task_update_clarification_max_rounds=9,
             _env_file=None,
         )

@@ -15,6 +15,13 @@ class TaskAgentState(TypedDict, total=False):
     pending_query_clarification: dict[str, Any] | None
     pending_task_selection: dict[str, Any] | None
     pending_task_delete_selection: dict[str, Any] | None
+    pending_task_draft_clarification: dict[str, Any] | None
+    pending_task_update_clarification: dict[str, Any] | None
+    active_task_context: dict[str, Any] | None
+    task_collection_inputs: list[str]
+    task_draft_clarification_round: int
+    task_update_inputs: list[str]
+    task_update_clarification_round: int
 
 
     parsed_task: dict[str, Any] | None
