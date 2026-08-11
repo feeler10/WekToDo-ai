@@ -24,3 +24,15 @@ class TaskRepositoryConsistencyError(TaskRepositoryError):
 
 class TaskDeletionBlockedError(TaskRepositoryError):
     pass
+
+
+class ConversationRepositoryError(RuntimeError):
+    pass
+
+
+class ConversationRepositoryConcurrencyError(ConversationRepositoryError):
+    pass
+
+
+class ConversationRepositoryConsistencyError(ConversationRepositoryError):
+    pass

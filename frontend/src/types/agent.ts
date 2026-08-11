@@ -139,3 +139,33 @@ export interface ChatMessage {
   content: string
   response?: AgentResponse
 }
+
+export interface ConversationRecord {
+  tenant_id: string
+  user_id: string
+  conversation_id: string
+  title: string
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
+export interface ConversationMessage {
+  id: string
+  tenant_id: string
+  user_id: string
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  operation_id: string
+  created_at: string
+  response: AgentResponse | null
+}
+
+export interface ConversationHistoryResponse {
+  tenant_id: string
+  user_id: string
+  conversation_id: string
+  conversation: ConversationRecord | null
+  messages: ConversationMessage[]
+}

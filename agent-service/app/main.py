@@ -13,6 +13,7 @@ from app.graph.builder import GraphDependencies, build_task_graph
 from app.intent.factory import create_intent_service
 from app.matching.factory import create_task_matcher
 from app.repositories.redis_task import RedisTaskRepository
+from app.repositories.redis_conversation import RedisConversationRepository
 from app.services.agent import TaskAgentService
 from app.services.parser_factory import (
     create_subtask_planner,
@@ -47,6 +48,12 @@ def create_app(
                 ) as checkpointer:
                     await checkpointer.asetup()
                     repository = RedisTaskRepository(application.state.redis)
+                    conversation_repository = RedisConversationRepository(
+                        application.state.redis,
+                        max_messages=(
+                            app_settings.conversation_history_max_messages
+                        ),
+                    )
                     graph = build_task_graph(
                         GraphDependencies(
                             pending_context_ttl_seconds=app_settings.pending_context_ttl_seconds,
@@ -77,7 +84,10 @@ def create_app(
                         ),
                         checkpointer=checkpointer,
                     )
-                    application.state.agent_service = TaskAgentService(graph)
+                    application.state.agent_service = TaskAgentService(
+                        graph,
+                        conversation_repository=conversation_repository,
+                    )
                     yield
         finally:
             if owns_redis_client:

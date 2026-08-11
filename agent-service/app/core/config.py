@@ -52,6 +52,12 @@ class Settings(BaseSettings):
         ge=1,
         le=8,
     )
+    conversation_history_max_messages: int = Field(
+        default=200,
+        ge=20,
+        le=1000,
+        multiple_of=2,
+    )
     intent_model_temperature: float = Field(default=0, ge=0, le=2)
     intent_model_max_tokens: int = Field(default=200, ge=1)
     intent_model_enable_thinking: bool = False

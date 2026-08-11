@@ -95,6 +95,7 @@ PENDING_CONTEXT_TTL_SECONDS=900
 ACTIVE_TASK_CONTEXT_TTL_SECONDS=1800
 TASK_DRAFT_CLARIFICATION_MAX_ROUNDS=4
 TASK_UPDATE_CLARIFICATION_MAX_ROUNDS=4
+CONVERSATION_HISTORY_MAX_MESSAGES=200
 ```
 
 `keyword` 按精确 ID、精确标题、规范化标题和关键词包含的顺序匹配，并始终限制当前 `user_id`。`vector`、`hybrid` 是保留配置，当前选择后会明确失败，不会静默降级。
@@ -136,6 +137,18 @@ TASK_UPDATE_CLARIFICATION_MAX_ROUNDS=4
 
 API 回归用例覆盖“修改接水任务 → 标题 → 改成每天早上接水 → 确认”的真实 HTTP 契约：三次 chat 必须复用同一 `thread_id`，前两轮返回 `needs_clarification`，第三轮返回 `awaiting_confirmation`，确认前任务保持原值和原版本，批准后才执行一次版本化修改。Vue Store 已符合该契约：线程 ID 在页面会话内保持不变，只有 `awaiting_confirmation` 才锁定为待确认动作，`needs_clarification` 时输入框继续可用。
 
+## v0.2.5 对话历史持久化与刷新恢复
+
+Agent chat 和 confirm 成功返回后，会把用户展示文本与完整 `AgentResponse` 作为一组对话交换写入 Redis。Vue 页面只在 `localStorage` 保存当前用户和 `conversation_id` 指针；页面启动或刷新时调用以下只读接口恢复消息、任务展示、澄清状态和当前待确认卡：
+
+```http
+GET /api/agent/conversations/{conversation_id}?user_id={user_id}
+```
+
+现阶段 `conversation_id` 与原有 `thread_id` 是同一个值。重复 `request_id` 和重复确认使用历史操作键去重；单个对话默认保留最近 200 条展示消息，可通过 `CONVERSATION_HISTORY_MAX_MESSAGES` 调整。历史写入失败会记录错误，但不会把已经成功的任务写操作伪装成失败或重复执行任务。
+
+存储契约已按 `tenant_id + user_id + conversation_id` 分层，当前服务内部固定使用 `tenant_id=default`。Redis 还会更新用户级对话时间索引，为后续左侧对话列表、切换、重命名和归档预留入口；本版本没有开放租户参数、对话列表 API 或侧栏 UI。完整对话历史不会重新注入 LLM，也不替代 LangGraph Checkpoint；任务事实仍从任务 Repository 读取。
+
 ## 测试
 
 ```powershell
@@ -175,4 +188,4 @@ npm run build
 
 ## 当前状态
 
-Milestone 7 已加入最小 Vue 对话页、任务确认卡、父子层级任务列表、确认式状态更新和确认式属性修改。P1a 后端已支持 AI 任务拆解、完整方案确认与编辑、Redis 原子批量创建直接子任务，以及子任务状态对父任务进度和完成状态的自动联动；v0.2.2 进一步支持自然语言删除计划、预览后原子批量删除，以及 `CANCELLED` 任务先恢复再继续原意图；v0.2.3 统一收录了同线程唯一任务焦点、受控单数指代、创建任务跨轮缺失参数收集，以及修改任务跨轮字段/新值收集、版本冲突防护与 Checkpoint 恢复；v0.2.4 增加版本化多轮评测、HTTP 零写入回归和隐私受限的待补充事件日志。前端可展示批量删除清单与恢复确认，并在删除成功后同步移除本地任务。更复杂的多级任务树页面仍未建设。Rule/Semantic/Hybrid Provider、向量检索、多意图拆分、复数及列表序号上下文引用、自动样例学习、Milvus、每日简报、动态规划和复杂仪表盘仍未实现。
+Milestone 7 已加入最小 Vue 对话页、任务确认卡、父子层级任务列表、确认式状态更新和确认式属性修改。P1a 后端已支持 AI 任务拆解、完整方案确认与编辑、Redis 原子批量创建直接子任务，以及子任务状态对父任务进度和完成状态的自动联动；v0.2.2 进一步支持自然语言删除计划、预览后原子批量删除，以及 `CANCELLED` 任务先恢复再继续原意图；v0.2.3 统一收录了同线程唯一任务焦点、受控单数指代、创建任务跨轮缺失参数收集，以及修改任务跨轮字段/新值收集、版本冲突防护与 Checkpoint 恢复；v0.2.4 增加版本化多轮评测、HTTP 零写入回归和隐私受限的待补充事件日志；v0.2.5 将展示用对话历史持久化到 Redis，并支持页面刷新后恢复当前会话。前端可展示批量删除清单与恢复确认，并在删除成功后同步移除本地任务。完整多租户认证、GPT 式对话侧栏、更复杂的多级任务树页面仍未建设。Rule/Semantic/Hybrid Provider、向量检索、多意图拆分、复数及列表序号上下文引用、自动样例学习、Milvus、每日简报、动态规划和复杂仪表盘仍未实现。

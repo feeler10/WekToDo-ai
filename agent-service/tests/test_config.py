@@ -95,3 +95,30 @@ def test_task_draft_clarification_rounds_have_bounded_default() -> None:
             task_update_clarification_max_rounds=9,
             _env_file=None,
         )
+
+
+def test_conversation_history_limit_has_bounded_default() -> None:
+    settings = Settings(app_env='test', _env_file=None)
+
+    assert settings.conversation_history_max_messages == 200
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            conversation_history_max_messages=19,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            conversation_history_max_messages=1001,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env='test',
+            conversation_history_max_messages=201,
+            _env_file=None,
+        )

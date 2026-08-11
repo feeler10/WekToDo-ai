@@ -52,16 +52,16 @@ class ConfirmationDecision(BaseModel):
 class AgentChatRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    user_id: str = Field(min_length=1)
-    thread_id: str = Field(min_length=1)
-    message: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=200)
+    thread_id: str = Field(min_length=1, max_length=200)
+    message: str = Field(min_length=1, max_length=4000)
     timezone: str = Field(default='UTC', min_length=1)
-    request_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1, max_length=200)
 
 
 class AgentConfirmRequest(ConfirmationDecision):
-    user_id: str = Field(min_length=1)
-    thread_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1, max_length=200)
+    thread_id: str = Field(min_length=1, max_length=200)
 
 
 class AgentResponse(BaseModel):

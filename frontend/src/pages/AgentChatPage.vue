@@ -1,4 +1,5 @@
 <script setup lang='ts'>
+import { onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import ChatComposer from '../components/ChatComposer.vue'
@@ -30,6 +31,10 @@ const quickPrompts = [
   '有哪些逾期任务？',
 ]
 
+onMounted(() => {
+  void store.initializeConversation()
+})
+
 function handleAction(
   action: ConfirmationAction,
   options?: ConfirmationOptions,
@@ -58,6 +63,7 @@ function updateStatus(task: Task, status: TaskStatus) {
           size='small'
           aria-label='用户 ID'
           :disabled='loading || Boolean(pendingResponse)'
+          @change='store.switchUser'
         />
         <a-tag color='blue'>线程 {{ threadId.slice(0, 8) }}</a-tag>
       </div>

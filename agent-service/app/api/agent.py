@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Path, Query, Request
 
 from app.core.exceptions import AppError
 from app.schemas.agent import AgentChatRequest, AgentConfirmRequest, AgentResponse
+from app.schemas.conversation import ConversationHistoryResponse
 from app.services.agent import (
     AgentThreadConflictError,
     AgentThreadNotFoundError,
@@ -38,3 +41,18 @@ async def confirm(payload: AgentConfirmRequest, request: Request) -> AgentRespon
         raise AppError(str(exc), code='thread_not_found', status_code=404) from exc
     except AgentThreadConflictError as exc:
         raise AppError(str(exc), code='thread_conflict', status_code=409) from exc
+
+
+@router.get(
+    '/conversations/{thread_id}',
+    response_model=ConversationHistoryResponse,
+)
+async def get_conversation_history(
+    thread_id: Annotated[str, Path(min_length=1, max_length=200)],
+    user_id: Annotated[str, Query(min_length=1, max_length=200)],
+    request: Request,
+) -> ConversationHistoryResponse:
+    return await _service(request).get_conversation_history(
+        user_id=user_id,
+        thread_id=thread_id,
+    )

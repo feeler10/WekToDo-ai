@@ -6,6 +6,44 @@
 
 暂无。
 
+## [0.2.5] - 2026-08-11
+
+> 持久化展示用对话历史，使当前多轮会话可在浏览器刷新后恢复，并为多租户归属和 GPT 式对话列表预留数据边界。
+
+### 版本内实际开发顺序
+
+1. 冻结范围：只实现当前会话的消息持久化和刷新恢复，不开发租户管理、对话列表侧栏、切换/删除 UI 或长期 LLM 记忆。
+2. 定义 `ConversationScope`、`ConversationRecord`、`ConversationMessage` 和历史响应，归属键从一开始包含 `tenant_id + user_id + conversation_id`。
+3. 实现 Redis 对话仓储，以事务原子追加一组用户/Agent 消息，维护首条消息标题、消息总数、更新时间和用户级对话索引。
+4. 使用 chat `request_id` 与 confirm `action_id + action` 作为历史操作幂等键，增加最近消息上限和七天操作键 TTL。
+5. 将历史记录接入 `TaskAgentService`；任务流程成功后再写历史，历史故障只记录日志，不改变已经完成的任务结果。
+6. 增加单对话恢复 API，并验证用户、租户和同名 conversation 的隔离。
+7. 前端持久化当前用户/会话指针，页面启动和用户切换时从后端恢复消息、任务展示与待确认卡。
+8. 增加 FakeRedis、HTTP 和真实 Redis 重建测试，同步配置、README、前端说明和版本号。
+
+### Added
+
+- 新增 Redis 对话仓储和 `GET /api/agent/conversations/{conversation_id}` 只读恢复接口。
+- 新增 `CONVERSATION_HISTORY_MAX_MESSAGES`，默认保留每个对话最近 200 条展示消息。
+- 新增用户级 Redis 有序索引，按更新时间记录 conversation ID，为后续对话列表预留查询入口。
+- 新增前端启动恢复与按用户保存活动 conversation ID 的逻辑。
+
+### Security and Reliability
+
+- 当前租户固定为 `default`，客户端不能提交或切换 `tenant_id`；未来应由认证上下文注入租户，而不是信任请求参数。
+- Redis Key 同时编码租户、用户和对话 ID；相同 conversation ID 在不同租户或用户下互不可见。
+- 用户消息和 Agent 展示响应会持久化到 Redis，但不会作为完整历史重新注入 LLM，也不会替代任务真实数据或 Checkpoint。
+- 每次交换的两条消息在单个 Redis 事务中写入；重复请求和重复确认不会产生重复历史。
+- 历史写入属于展示副作用；失败会记录受限元数据日志，但不会让已经成功的任务写入被客户端误认为失败并重试。
+
+### Tests
+
+- 新增仓储幂等、消息上限、标题/计数、索引、租户隔离、用户隔离和 conversation 隔离测试。
+- 新增多轮创建刷新恢复、待确认卡恢复、重复确认历史幂等和历史故障不遮蔽 Agent 成功响应测试。
+- 新增真实 Redis 仓储重建后恢复同一对话历史的集成测试。
+- 后端完整测试结果：`369 passed, 9 warnings`，包含真实 Redis 对话仓储重建和既有 Redis Checkpoint 集成测试。
+- 前端 `npm run typecheck` 与 `npm run build` 通过；Vite 保留现有大于 500 kB 的 chunk 警告。
+
 ## [0.2.4] - 2026-08-11
 
 > 在不扩大多轮能力边界的前提下，为 v0.2.3 增加可重复评测、HTTP 闭环回归和隐私受限的运行观测。

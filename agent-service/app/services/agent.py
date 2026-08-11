@@ -1,17 +1,34 @@
+import logging
 from urllib.parse import quote
 
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, StateSnapshot
 
+from app.repositories.conversation import ConversationRepository
 from app.schemas.agent import (
     AgentChatRequest,
     AgentConfirmRequest,
     AgentResponse,
 )
 from app.schemas.audit import PendingAction
+from app.schemas.conversation import (
+    DEFAULT_TENANT_ID,
+    ConversationHistoryResponse,
+    ConversationScope,
+)
 from app.schemas.draft import TaskDraft
 from app.schemas.task import Task
 from app.schemas.subtask import SubtaskPlan
+
+
+logger = logging.getLogger(__name__)
+
+_CONFIRMATION_HISTORY_LABELS = {
+    'approve': '确认执行',
+    'edit': '提交编辑',
+    'reject': '取消操作',
+    'regenerate': '重新生成',
+}
 
 
 class AgentThreadError(RuntimeError):
@@ -27,8 +44,16 @@ class AgentThreadConflictError(AgentThreadError):
 
 
 class TaskAgentService:
-    def __init__(self, graph: CompiledStateGraph) -> None:
+    def __init__(
+        self,
+        graph: CompiledStateGraph,
+        *,
+        conversation_repository: ConversationRepository | None = None,
+        tenant_id: str = DEFAULT_TENANT_ID,
+    ) -> None:
         self._graph = graph
+        self._conversation_repository = conversation_repository
+        self._tenant_id = tenant_id
 
     async def chat(self, request: AgentChatRequest) -> AgentResponse:
         config = self._config(request.user_id, request.thread_id)
@@ -110,7 +135,15 @@ class TaskAgentService:
             'error_message': None,
         }
         await self._graph.ainvoke(initial_state, config=config)
-        return await self._current_response(config, request.thread_id)
+        response = await self._current_response(config, request.thread_id)
+        await self._record_exchange(
+            user_id=request.user_id,
+            thread_id=request.thread_id,
+            operation_id=f'chat:{request.request_id}',
+            user_content=request.message,
+            response=response,
+        )
+        return response
 
     async def confirm(self, request: AgentConfirmRequest) -> AgentResponse:
         config = self._config(request.user_id, request.thread_id)
@@ -125,7 +158,12 @@ class TaskAgentService:
             raise AgentThreadNotFoundError('Agent thread was not found')
 
         if values.get('last_handled_action_id') == request.action_id:
-            return self._response_from_snapshot(snapshot, request.thread_id)
+            response = self._response_from_snapshot(
+                snapshot,
+                request.thread_id,
+            )
+            await self._record_confirmation(request, response)
+            return response
         if not snapshot.next:
             raise AgentThreadConflictError('This thread is not awaiting confirmation')
 
@@ -139,7 +177,73 @@ class TaskAgentService:
             exclude_none=True,
         )
         await self._graph.ainvoke(Command(resume=decision), config=config)
-        return await self._current_response(config, request.thread_id)
+        response = await self._current_response(config, request.thread_id)
+        await self._record_confirmation(request, response)
+        return response
+
+    async def get_conversation_history(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+    ) -> ConversationHistoryResponse:
+        scope = self._conversation_scope(user_id, thread_id)
+        if self._conversation_repository is None:
+            return ConversationHistoryResponse(**scope.model_dump())
+        return await self._conversation_repository.get_history(scope=scope)
+
+    async def _record_confirmation(
+        self,
+        request: AgentConfirmRequest,
+        response: AgentResponse,
+    ) -> None:
+        action = request.action.value
+        await self._record_exchange(
+            user_id=request.user_id,
+            thread_id=request.thread_id,
+            operation_id=f'confirm:{request.action_id}:{action}',
+            user_content=_CONFIRMATION_HISTORY_LABELS[action],
+            response=response,
+        )
+
+    async def _record_exchange(
+        self,
+        *,
+        user_id: str,
+        thread_id: str,
+        operation_id: str,
+        user_content: str,
+        response: AgentResponse,
+    ) -> None:
+        if self._conversation_repository is None:
+            return
+        try:
+            await self._conversation_repository.append_exchange(
+                scope=self._conversation_scope(user_id, thread_id),
+                operation_id=operation_id,
+                user_content=user_content,
+                assistant_response=response,
+            )
+        except Exception:
+            logger.exception(
+                'conversation_history_write_failed tenant_id=%s user_id=%s '
+                'conversation_id=%s operation_id=%s',
+                self._tenant_id,
+                user_id,
+                thread_id,
+                operation_id,
+            )
+
+    def _conversation_scope(
+        self,
+        user_id: str,
+        thread_id: str,
+    ) -> ConversationScope:
+        return ConversationScope(
+            tenant_id=self._tenant_id,
+            user_id=user_id,
+            conversation_id=thread_id,
+        )
 
     async def _current_response(
         self,

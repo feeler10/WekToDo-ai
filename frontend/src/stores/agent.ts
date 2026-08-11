@@ -1,7 +1,11 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { confirmAgentAction, sendAgentMessage } from '../api/agent'
+import {
+  confirmAgentAction,
+  getConversationHistory,
+  sendAgentMessage,
+} from '../api/agent'
 import type {
   AgentResponse,
   ChatMessage,
@@ -26,14 +30,31 @@ const statusCommands: Record<TaskStatus, string> = {
   CANCELLED: '取消',
 }
 
+const activeUserStorageKey = 'wektodo.active-user.v1'
+
+function conversationStorageKey(userId: string) {
+  return `wektodo.active-conversation.v1:${encodeURIComponent(userId)}`
+}
+
+function storedUserId() {
+  return localStorage.getItem(activeUserStorageKey) || 'demo-user'
+}
+
+function storedConversationId(userId: string) {
+  return localStorage.getItem(conversationStorageKey(userId)) || crypto.randomUUID()
+}
+
 export const useAgentStore = defineStore('agent', () => {
-  const userId = ref('demo-user')
-  const threadId = ref(crypto.randomUUID())
+  const initialUserId = storedUserId()
+  const userId = ref(initialUserId)
+  const threadId = ref(storedConversationId(initialUserId))
   const messages = ref<ChatMessage[]>([])
   const tasks = ref<Task[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pendingResponse = ref<AgentResponse | null>(null)
+  const initialized = ref(false)
+  const restoredUserId = ref<string | null>(null)
 
   const hasMessages = computed(() => messages.value.length > 0)
 
@@ -47,6 +68,65 @@ export const useAgentStore = defineStore('agent', () => {
     pendingResponse.value =
       response.status === 'awaiting_confirmation' ? response : null
     mergeTasks(response)
+  }
+
+  function persistActiveConversation() {
+    localStorage.setItem(activeUserStorageKey, userId.value)
+    localStorage.setItem(
+      conversationStorageKey(userId.value),
+      threadId.value,
+    )
+  }
+
+  async function restoreConversation() {
+    error.value = null
+    loading.value = true
+    messages.value = []
+    tasks.value = []
+    pendingResponse.value = null
+    persistActiveConversation()
+    try {
+      const history = await getConversationHistory(
+        userId.value,
+        threadId.value,
+      )
+      messages.value = history.messages.map((message) => ({
+        id: message.id,
+        role: message.role === 'assistant' ? 'agent' : 'user',
+        content: message.content,
+        ...(message.response ? { response: message.response } : {}),
+      }))
+      for (const message of history.messages) {
+        if (message.response) mergeTasks(message.response)
+      }
+      const lastResponse = [...history.messages]
+        .reverse()
+        .find((message) => message.role === 'assistant')
+        ?.response
+      pendingResponse.value =
+        lastResponse?.status === 'awaiting_confirmation'
+          ? lastResponse
+          : null
+      restoredUserId.value = userId.value
+      initialized.value = true
+    } catch (reason) {
+      error.value = reason instanceof Error ? reason.message : '恢复对话失败'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function initializeConversation() {
+    if (initialized.value) return
+    await restoreConversation()
+  }
+
+  async function switchUser() {
+    const normalized = userId.value.trim()
+    if (!normalized || loading.value) return
+    userId.value = normalized
+    threadId.value = storedConversationId(normalized)
+    await restoreConversation()
   }
 
   function mergeTasks(response: AgentResponse) {
@@ -81,6 +161,11 @@ export const useAgentStore = defineStore('agent', () => {
   async function sendMessage(content: string) {
     const message = content.trim()
     if (!message || loading.value) return
+    if (restoredUserId.value !== userId.value) {
+      await switchUser()
+      if (error.value) return
+    }
+    persistActiveConversation()
     error.value = null
     loading.value = true
     messages.value.push({
@@ -155,8 +240,12 @@ export const useAgentStore = defineStore('agent', () => {
     loading,
     error,
     pendingResponse,
+    initialized,
     hasMessages,
     sendMessage,
+    initializeConversation,
+    restoreConversation,
+    switchUser,
     respondToPending,
     requestStatusUpdate,
     refreshTasks,
