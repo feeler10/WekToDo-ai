@@ -11,12 +11,16 @@ from app.graph.nodes import (
     calculate_priority,
     classify_intent,
     execute_create_task,
+    execute_create_subtasks_batch,
     execute_status_update,
     execute_task_update,
     handle_error,
+    generate_subtask_plan,
+    load_decomposition_context,
     parse_task,
     parse_task_update,
     prepare_confirmation,
+    prepare_subtask_confirmation,
     prepare_status_update,
     prepare_task_update,
     query_task_data,
@@ -30,8 +34,10 @@ from app.graph.nodes import (
     respond_to_general_chat,
     respond_unknown_intent,
     validate_task,
+    validate_generated_subtask_plan,
 )
 from app.graph.parser import TaskParser
+from app.graph.subtask_planner import SubtaskPlanner
 from app.graph.task_update_parser import TaskUpdateParser
 from app.graph.routing import (
     route_after_classification,
@@ -47,6 +53,9 @@ from app.graph.routing import (
     route_after_task_reference_resolution,
     route_after_task_update_parsing,
     route_after_validation,
+    route_after_decomposition_context,
+    route_after_subtask_generation,
+    route_after_subtask_validation,
 )
 from app.graph.state import TaskAgentState
 from app.intent.service import IntentRecognitionService
@@ -65,6 +74,7 @@ class GraphDependencies:
     task_matcher: TaskMatcher | None = None
     pending_context_ttl_seconds: int = 900
     task_update_parser: TaskUpdateParser | None = None
+    subtask_planner: SubtaskPlanner | None = None
 
 
 def build_task_graph(
@@ -141,6 +151,28 @@ def build_task_graph(
         ),
     )
     builder.add_node('prepare_task_update', prepare_task_update)
+    builder.add_node(
+        'load_decomposition_context',
+        partial(
+            load_decomposition_context,
+            repository=dependencies.task_repository,
+        ),
+    )
+    builder.add_node(
+        'generate_subtask_plan',
+        partial(
+            generate_subtask_plan,
+            planner=dependencies.subtask_planner,
+        ),
+    )
+    builder.add_node(
+        'validate_subtask_plan',
+        validate_generated_subtask_plan,
+    )
+    builder.add_node(
+        'prepare_subtask_confirmation',
+        prepare_subtask_confirmation,
+    )
     builder.add_node('prepare_confirmation', prepare_confirmation)
     builder.add_node('request_confirmation', request_confirmation)
     builder.add_node(
@@ -154,6 +186,13 @@ def build_task_graph(
         'execute_status_update',
         partial(
             execute_status_update,
+            repository=dependencies.task_repository,
+        ),
+    )
+    builder.add_node(
+        'execute_create_subtasks_batch',
+        partial(
+            execute_create_subtasks_batch,
             repository=dependencies.task_repository,
         ),
     )
@@ -198,6 +237,7 @@ def build_task_graph(
             'classify_intent': 'classify_intent',
             'prepare_status_update': 'prepare_status_update',
             'parse_task_update': 'parse_task_update',
+            'load_decomposition_context': 'load_decomposition_context',
             'handle_error': 'handle_error',
             'end': END,
         },
@@ -246,6 +286,7 @@ def build_task_graph(
         {
             'prepare_status_update': 'prepare_status_update',
             'parse_task_update': 'parse_task_update',
+            'load_decomposition_context': 'load_decomposition_context',
             'handle_error': 'handle_error',
             'end': END,
         },
@@ -270,6 +311,39 @@ def build_task_graph(
     )
     builder.add_conditional_edges(
         'prepare_task_update',
+        route_after_preparation,
+        {
+            'request_confirmation': 'request_confirmation',
+            'handle_error': 'handle_error',
+            'end': END,
+        },
+    )
+    builder.add_conditional_edges(
+        'load_decomposition_context',
+        route_after_decomposition_context,
+        {
+            'generate_subtask_plan': 'generate_subtask_plan',
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'generate_subtask_plan',
+        route_after_subtask_generation,
+        {
+            'validate_subtask_plan': 'validate_subtask_plan',
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'validate_subtask_plan',
+        route_after_subtask_validation,
+        {
+            'prepare_subtask_confirmation': 'prepare_subtask_confirmation',
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'prepare_subtask_confirmation',
         route_after_preparation,
         {
             'request_confirmation': 'request_confirmation',
@@ -316,8 +390,11 @@ def build_task_graph(
             'execute_create_task': 'execute_create_task',
             'execute_status_update': 'execute_status_update',
             'execute_task_update': 'execute_task_update',
+            'execute_create_subtasks_batch': 'execute_create_subtasks_batch',
             'edit': 'validate_task',
             'regenerate': 'parse_task',
+            'edit_subtasks': 'validate_subtask_plan',
+            'regenerate_subtasks': 'generate_subtask_plan',
             'reject': END,
             'handle_error': 'handle_error',
         },
@@ -332,6 +409,14 @@ def build_task_graph(
     )
     builder.add_conditional_edges(
         'execute_status_update',
+        route_after_execution,
+        {
+            'end': END,
+            'handle_error': 'handle_error',
+        },
+    )
+    builder.add_conditional_edges(
+        'execute_create_subtasks_batch',
         route_after_execution,
         {
             'end': END,

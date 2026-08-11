@@ -76,6 +76,11 @@ async def resolve_task_reference(
                 if operation == IntentType.UPDATE_TASK
                 else None
             ),
+            decomposition_message=(
+                state.get('user_message')
+                if operation == IntentType.DECOMPOSE_TASK
+                else None
+            ),
             created_at=now,
             expires_at=now + pending_ttl,
         )
@@ -100,7 +105,11 @@ async def resolve_task_reference(
                     reference=pending.reference,
                     tasks=matched.tasks,
                     timezone_name=state.get('timezone', 'UTC'),
-                    operation_label='更新',
+                    operation_label=(
+                        '拆解'
+                        if operation == IntentType.DECOMPOSE_TASK
+                        else '更新'
+                    ),
                 )
             ),
             'error_message': None,

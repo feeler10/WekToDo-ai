@@ -13,6 +13,7 @@ from app.intent.providers.fake import FakeIntentClassifier
 from app.intent.service import IntentRecognitionService
 from app.repositories.redis_task import RedisTaskRepository
 from app.schemas.agent import AgentChatRequest, AgentConfirmRequest
+from app.schemas.subtask import SubtaskBatchCreate, SubtaskDraft
 from app.schemas.task import Task, TaskQuery, TaskStatus
 from app.services.agent import (
     AgentThreadConflictError,
@@ -42,6 +43,7 @@ def _query(
     start_at: datetime | None = None,
     end_at: datetime | None = None,
     raw: str | None = None,
+    include_subtasks: bool = False,
     clarification_reason: ClarificationReason | None = None,
     question: str | None = None,
 ) -> IntentResult:
@@ -56,6 +58,7 @@ def _query(
             start_at=start_at,
             end_at=end_at,
             raw_time_expression=raw,
+            include_subtasks=include_subtasks,
         ),
         needs_clarification=clarification_reason is not None,
         clarification_reason=clarification_reason,
@@ -353,6 +356,54 @@ async def test_complete_new_query_replaces_old_clarification() -> None:
             harness.service._config('user-1', 'thread-1')
         )
         assert snapshot.values.get('pending_query_clarification') is None
+    finally:
+        await harness.close()
+
+
+@pytest.mark.anyio
+async def test_subtask_query_survives_parent_candidate_selection() -> None:
+    harness = Harness(
+        {
+            '论文实验有哪些子任务': _query(
+                scope=TimeScope.UNSPECIFIED,
+                reference='论文实验',
+                include_subtasks=True,
+            ),
+        },
+        'stage3:subtask-selection',
+    )
+    try:
+        for parent_id in ('parent-1', 'parent-2'):
+            await harness.store(
+                Task(
+                    id=parent_id,
+                    user_id='user-1',
+                    title='论文实验',
+                )
+            )
+            await harness.repository.create_subtasks_batch(
+                SubtaskBatchCreate(
+                    user_id='user-1',
+                    parent_task_id=parent_id,
+                    expected_parent_version=1,
+                    items=[
+                        SubtaskDraft(
+                            step_key='only',
+                            title=f'{parent_id} 的子任务',
+                            order=1,
+                        )
+                    ],
+                ),
+                idempotency_key=f'batch-{parent_id}',
+            )
+
+        candidates = await harness.chat('论文实验有哪些子任务')
+        selected = await harness.chat('第一个')
+
+        assert candidates.status == 'needs_disambiguation'
+        assert selected.task is not None
+        assert '共有 1 个子任务' in selected.message
+        assert f'{selected.task.id} 的子任务' in selected.message
     finally:
         await harness.close()
 

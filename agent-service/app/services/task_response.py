@@ -1,4 +1,6 @@
+from collections import Counter
 from datetime import datetime
+from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from app.intent.enums import ClarificationReason, TimeScope
@@ -34,13 +36,28 @@ def format_task_list_response(
     *,
     plan: TaskQueryPlan | None,
     timezone_name: str,
+    all_tasks: list[Task] | None = None,
 ) -> str:
     if not tasks:
         return format_zero_match_response(plan=plan)
 
-    count = len(tasks)
+    hierarchy_tasks = all_tasks if all_tasks is not None else tasks
+    child_counts = Counter(
+        task.parent_id
+        for task in hierarchy_tasks
+        if task.parent_id is not None
+    )
+    tasks_by_id = {task.id: task for task in hierarchy_tasks}
+    root_tasks = _unique_tasks(
+        tasks_by_id.get(task.parent_id) if task.parent_id else task
+        for task in tasks
+    )
+    if not root_tasks:
+        return format_zero_match_response(plan=plan)
+
+    count = len(root_tasks)
     high_count = sum(
-        task.effective_priority in _HIGH_PRIORITIES for task in tasks
+        task.effective_priority in _HIGH_PRIORITIES for task in root_tasks
     )
     unfinished = bool(plan and plan.statuses == _OPEN_STATUSES)
     scope = plan.time_scope if plan is not None else None
@@ -62,8 +79,44 @@ def format_task_list_response(
         header += f'，其中 {high_count} 个为高优先级'
     lines = [f'{header}。', '']
     lines.extend(
+        f'{index}. '
+        f'{_format_task_line(task, timezone_name, child_count=child_counts[task.id])}'
+        for index, task in enumerate(root_tasks, start=1)
+    )
+    return '\n'.join(lines)
+
+
+def _unique_tasks(tasks: Iterable[Task | None]) -> list[Task]:
+    result: list[Task] = []
+    seen: set[str] = set()
+    for task in tasks:
+        if task is None or task.id in seen:
+            continue
+        result.append(task)
+        seen.add(task.id)
+    return result
+
+
+def format_subtask_list_response(
+    parent: Task,
+    subtasks: list[Task],
+    *,
+    timezone_name: str,
+) -> str:
+    ordered = sorted(
+        subtasks,
+        key=lambda task: (
+            task.subtask_order if task.subtask_order is not None else 10**9,
+            task.created_at,
+            task.id,
+        ),
+    )
+    if not ordered:
+        return f'“{parent.title}”当前没有子任务。'
+    lines = [f'“{parent.title}”共有 {len(ordered)} 个子任务：', '']
+    lines.extend(
         f'{index}. {_format_task_line(task, timezone_name)}'
-        for index, task in enumerate(tasks, start=1)
+        for index, task in enumerate(ordered, start=1)
     )
     return '\n'.join(lines)
 
@@ -195,8 +248,18 @@ def _format_update_value(field: str, value: object, timezone_name: str) -> str:
     return str(value)
 
 
-def _format_task_line(task: Task, timezone_name: str) -> str:
-    parts = [task.title, STATUS_LABELS[task.status]]
+def _format_task_line(
+    task: Task,
+    timezone_name: str,
+    *,
+    child_count: int = 0,
+) -> str:
+    title = (
+        f'{task.title}（含 {child_count} 个子任务）'
+        if child_count
+        else task.title
+    )
+    parts = [title, STATUS_LABELS[task.status]]
     if task.deadline is not None:
         parts.append(f'截止时间 {_format_datetime(task.deadline, timezone_name)}')
     if task.effective_priority is not None:

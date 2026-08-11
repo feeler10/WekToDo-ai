@@ -1,7 +1,10 @@
 import json
+import hashlib
+import re
 from collections.abc import Iterable
 from typing import Any
 from urllib.parse import quote
+from uuid import NAMESPACE_URL, uuid5
 
 from redis.asyncio import Redis
 from redis.exceptions import WatchError
@@ -21,6 +24,11 @@ from app.schemas.task import (
     TaskStatus,
     TaskUpdate,
     utc_now,
+)
+from app.schemas.subtask import (
+    SubtaskBatchCreate,
+    SubtaskBatchResult,
+    TaskStatusUpdateResult,
 )
 from app.services.task_state import (
     TERMINAL_TASK_STATUSES,
@@ -102,6 +110,329 @@ class RedisTaskRepository(TaskRepository):
         if task.user_id != user_id:
             raise TaskRepositoryConsistencyError('Stored task has an invalid user_id')
         return task
+
+    async def list_children(
+        self,
+        *,
+        user_id: str,
+        parent_id: str,
+    ) -> list[Task]:
+        child_ids = await self._redis.zrange(
+            self._children_index_key(user_id, parent_id),
+            0,
+            -1,
+        )
+        if not child_ids:
+            return []
+        ordered_ids = [self._text(task_id) for task_id in child_ids]
+        payloads = await self._redis.mget(
+            [self._task_key(user_id, task_id) for task_id in ordered_ids]
+        )
+        tasks: list[Task] = []
+        for payload in payloads:
+            if payload is None:
+                raise TaskRepositoryConsistencyError(
+                    'Child index references a missing task'
+                )
+            task = self._deserialize(payload)
+            if task.user_id != user_id or task.parent_id != parent_id:
+                raise TaskRepositoryConsistencyError(
+                    'Stored child task has invalid ownership or parent_id'
+                )
+            tasks.append(task)
+        return tasks
+
+    async def create_subtasks_batch(
+        self,
+        batch: SubtaskBatchCreate,
+        *,
+        idempotency_key: str,
+    ) -> SubtaskBatchResult:
+        if not idempotency_key:
+            raise ValueError('idempotency_key must not be empty')
+        fingerprint = self._batch_fingerprint(batch)
+        idempotency_redis_key = self._batch_idempotency_key(
+            batch.user_id,
+            idempotency_key,
+        )
+        parent_key = self._task_key(batch.user_id, batch.parent_task_id)
+        children_index_key = self._children_index_key(
+            batch.user_id,
+            batch.parent_task_id,
+        )
+        child_ids = {
+            item.step_key: str(
+                uuid5(
+                    NAMESPACE_URL,
+                    ':'.join(
+                        (
+                            batch.user_id,
+                            batch.parent_task_id,
+                            idempotency_key,
+                            item.step_key,
+                        )
+                    ),
+                )
+            )
+            for item in batch.items
+        }
+        new_task_keys = [
+            self._task_key(batch.user_id, task_id)
+            for task_id in child_ids.values()
+        ]
+
+        for _attempt in range(self._transaction_retries):
+            try:
+                async with self._redis.pipeline(transaction=True) as pipeline:
+                    await pipeline.watch(
+                        idempotency_redis_key,
+                        parent_key,
+                        children_index_key,
+                        *new_task_keys,
+                    )
+                    existing_record = await pipeline.get(idempotency_redis_key)
+                    if existing_record is not None:
+                        record = json.loads(self._text(existing_record))
+                        await pipeline.unwatch()
+                        if record.get('fingerprint') != fingerprint:
+                            raise TaskRepositoryConsistencyError(
+                                'Batch idempotency key was reused with different input'
+                            )
+                        return SubtaskBatchResult(
+                            parent_task=record['parent_task'],
+                            subtasks=record['subtasks'],
+                            replayed=True,
+                        )
+
+                    parent_payload = await pipeline.get(parent_key)
+                    if parent_payload is None:
+                        await pipeline.unwatch()
+                        raise TaskNotFoundError(
+                            f'Task not found: {batch.parent_task_id}'
+                        )
+                    parent = self._deserialize(parent_payload)
+                    if parent.user_id != batch.user_id:
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Parent task has an invalid user_id'
+                        )
+                    if parent.parent_id is not None:
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Nested task decomposition is not supported'
+                        )
+                    if parent.version != batch.expected_parent_version:
+                        await pipeline.unwatch()
+                        raise TaskVersionConflictError(
+                            f'Expected version {batch.expected_parent_version}, '
+                            f'got {parent.version}'
+                        )
+                    if parent.status == TaskStatus.CANCELLED:
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Cancelled parent task cannot receive subtasks'
+                        )
+                    generated_id_exists = False
+                    for key in new_task_keys:
+                        if await pipeline.exists(key):
+                            generated_id_exists = True
+                            break
+                    if generated_id_exists:
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Generated child task ID already exists'
+                        )
+
+                    existing_ids_raw = await pipeline.zrange(
+                        children_index_key,
+                        0,
+                        -1,
+                    )
+                    existing_ids = [
+                        self._text(task_id) for task_id in existing_ids_raw
+                    ]
+                    existing_keys = [
+                        self._task_key(batch.user_id, task_id)
+                        for task_id in existing_ids
+                    ]
+                    if existing_keys:
+                        await pipeline.watch(*existing_keys)
+                        existing_payloads = await pipeline.mget(existing_keys)
+                    else:
+                        existing_payloads = []
+                    existing_children = [
+                        self._deserialize(payload)
+                        for payload in existing_payloads
+                        if payload is not None
+                    ]
+                    if len(existing_children) != len(existing_ids):
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Child index references a missing task'
+                        )
+                    existing_titles = {
+                        self._normalized_title(task.title)
+                        for task in existing_children
+                        if task.status != TaskStatus.CANCELLED
+                    }
+                    new_titles = [
+                        self._normalized_title(item.title)
+                        for item in batch.items
+                    ]
+                    if len(set(new_titles)) != len(new_titles):
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Batch contains duplicate subtask titles'
+                        )
+                    if any(
+                        title in existing_titles for title in new_titles
+                    ):
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Batch contains a duplicate existing subtask'
+                        )
+                    step_keys = {item.step_key for item in batch.items}
+                    if len(step_keys) != len(batch.items):
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Batch step keys must be unique'
+                        )
+                    orders = {item.order for item in batch.items}
+                    if len(orders) != len(batch.items):
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Batch subtask orders must be unique'
+                        )
+                    order_by_key = {
+                        item.step_key: item.order for item in batch.items
+                    }
+                    for item in batch.items:
+                        if (
+                            parent.deadline is not None
+                            and item.deadline is not None
+                            and item.deadline > parent.deadline
+                        ):
+                            await pipeline.unwatch()
+                            raise TaskRepositoryConsistencyError(
+                                'Subtask deadline exceeds parent deadline'
+                            )
+                        if any(
+                            dependency not in step_keys
+                            or order_by_key[dependency] >= item.order
+                            for dependency in item.depends_on
+                        ):
+                            await pipeline.unwatch()
+                            raise TaskRepositoryConsistencyError(
+                                'Batch contains an invalid dependency'
+                            )
+
+                    now = utc_now()
+                    order_offset = max(
+                        (
+                            task.subtask_order or 0
+                            for task in existing_children
+                        ),
+                        default=0,
+                    )
+                    subtasks: list[Task] = []
+                    for item in sorted(batch.items, key=lambda value: value.order):
+                        task_id = child_ids[item.step_key]
+                        subtasks.append(
+                            Task(
+                                id=task_id,
+                                user_id=batch.user_id,
+                                parent_id=parent.id,
+                                title=item.title,
+                                description=item.description,
+                                deadline=item.deadline,
+                                estimated_minutes=item.estimated_minutes,
+                                is_ai_generated=True,
+                                subtask_order=order_offset + item.order,
+                                depends_on_task_ids=[
+                                    child_ids[dependency]
+                                    for dependency in item.depends_on
+                                ],
+                                completion_weight=item.completion_weight,
+                                creation_source='ai_decomposition',
+                                created_at=now,
+                                updated_at=now,
+                            )
+                        )
+
+                    effective_existing = [
+                        task
+                        for task in existing_children
+                        if task.status != TaskStatus.CANCELLED
+                    ]
+                    effective_count = len(effective_existing) + len(subtasks)
+                    done_count = sum(
+                        task.status == TaskStatus.DONE
+                        for task in effective_existing
+                    )
+                    progress = (
+                        done_count * 100 // effective_count
+                        if effective_count
+                        else 0
+                    )
+                    parent_status = (
+                        TaskStatus.DOING
+                        if parent.status == TaskStatus.DONE
+                        else parent.status
+                    )
+                    updated_parent = Task.model_validate(
+                        {
+                            **parent.model_dump(),
+                            'status': parent_status,
+                            'progress': progress,
+                            'completed_at': (
+                                None
+                                if parent_status != TaskStatus.DONE
+                                else parent.completed_at
+                            ),
+                            'updated_at': now,
+                            'version': parent.version + 1,
+                        }
+                    )
+                    record = {
+                        'fingerprint': fingerprint,
+                        'parent_task_id': parent.id,
+                        'child_task_ids': [task.id for task in subtasks],
+                        'parent_task': updated_parent.model_dump(mode='json'),
+                        'subtasks': [
+                            task.model_dump(mode='json') for task in subtasks
+                        ],
+                    }
+
+                    pipeline.multi()
+                    for task in subtasks:
+                        pipeline.set(
+                            self._task_key(batch.user_id, task.id),
+                            task.model_dump_json(),
+                        )
+                    pipeline.sadd(
+                        self._user_index_key(batch.user_id),
+                        *(task.id for task in subtasks),
+                    )
+                    pipeline.zadd(
+                        children_index_key,
+                        {
+                            task.id: task.subtask_order or 0
+                            for task in subtasks
+                        },
+                    )
+                    pipeline.set(parent_key, updated_parent.model_dump_json())
+                    pipeline.set(idempotency_redis_key, json.dumps(record))
+                    await pipeline.execute()
+                    return SubtaskBatchResult(
+                        parent_task=updated_parent,
+                        subtasks=subtasks,
+                    )
+            except WatchError:
+                continue
+
+        raise TaskRepositoryConcurrencyError(
+            'Could not create subtask batch after concurrent updates'
+        )
 
     async def update(
         self,
@@ -241,6 +572,26 @@ class RedisTaskRepository(TaskRepository):
         confirmed_reopen: bool = False,
         idempotency_key: str | None = None,
     ) -> Task:
+        result = await self.update_status_with_rollup(
+            user_id=user_id,
+            task_id=task_id,
+            target_status=target_status,
+            expected_version=expected_version,
+            confirmed_reopen=confirmed_reopen,
+            idempotency_key=idempotency_key,
+        )
+        return result.task
+
+    async def update_status_with_rollup(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        target_status: TaskStatus,
+        expected_version: int,
+        confirmed_reopen: bool = False,
+        idempotency_key: str | None = None,
+    ) -> TaskStatusUpdateResult:
         task_redis_key = self._task_key(user_id, task_id)
         status_idempotency_key = (
             self._status_idempotency_key(user_id, idempotency_key)
@@ -263,6 +614,8 @@ class RedisTaskRepository(TaskRepository):
                             if (
                                 record.get('task_id') != task_id
                                 or record.get('target_status') != target_status.value
+                                or record.get('expected_version') != expected_version
+                                or record.get('confirmed_reopen') != confirmed_reopen
                             ):
                                 raise TaskRepositoryConsistencyError(
                                     'Status idempotency key was reused with different input'
@@ -272,7 +625,15 @@ class RedisTaskRepository(TaskRepository):
                                 raise TaskRepositoryConsistencyError(
                                     'Stored task has an invalid user_id'
                                 )
-                            return replayed
+                            parent_data = record.get('parent_task')
+                            return TaskStatusUpdateResult(
+                                task=replayed,
+                                parent_task=(
+                                    Task.model_validate(parent_data)
+                                    if parent_data is not None
+                                    else None
+                                ),
+                            )
                     payload = await pipeline.get(task_redis_key)
                     if payload is None:
                         await pipeline.unwatch()
@@ -288,6 +649,77 @@ class RedisTaskRepository(TaskRepository):
                         await pipeline.unwatch()
                         raise TaskVersionConflictError(
                             f'Expected version {expected_version}, got {task.version}'
+                        )
+
+                    relation_parent: Task | None = None
+                    relation_parent_key: str | None = None
+                    children_index_key = self._children_index_key(
+                        user_id,
+                        task.parent_id or task.id,
+                    )
+                    additional_watch_keys = [children_index_key]
+                    if task.parent_id is not None:
+                        relation_parent_key = self._task_key(
+                            user_id,
+                            task.parent_id,
+                        )
+                        additional_watch_keys.append(relation_parent_key)
+                    await pipeline.watch(*additional_watch_keys)
+
+                    if relation_parent_key is not None:
+                        relation_parent_payload = await pipeline.get(
+                            relation_parent_key
+                        )
+                        if relation_parent_payload is None:
+                            await pipeline.unwatch()
+                            raise TaskRepositoryConsistencyError(
+                                'Child task references a missing parent'
+                            )
+                        relation_parent = self._deserialize(
+                            relation_parent_payload
+                        )
+                        if relation_parent.user_id != user_id:
+                            await pipeline.unwatch()
+                            raise TaskRepositoryConsistencyError(
+                                'Parent task has an invalid user_id'
+                            )
+                        if relation_parent.status == TaskStatus.CANCELLED:
+                            await pipeline.unwatch()
+                            raise TaskRepositoryConsistencyError(
+                                'Cannot update a child of a cancelled parent'
+                            )
+
+                    child_ids_raw = await pipeline.zrange(
+                        children_index_key,
+                        0,
+                        -1,
+                    )
+                    child_ids = [
+                        self._text(child_id) for child_id in child_ids_raw
+                    ]
+                    child_keys = [
+                        self._task_key(user_id, child_id)
+                        for child_id in child_ids
+                    ]
+                    if child_keys:
+                        await pipeline.watch(*child_keys)
+                        child_payloads = await pipeline.mget(child_keys)
+                    else:
+                        child_payloads = []
+                    children = [
+                        self._deserialize(child_payload)
+                        for child_payload in child_payloads
+                        if child_payload is not None
+                    ]
+                    if len(children) != len(child_ids):
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Child index references a missing task'
+                        )
+                    if task.parent_id is not None and task.id not in child_ids:
+                        await pipeline.unwatch()
+                        raise TaskRepositoryConsistencyError(
+                            'Child task is missing from the parent index'
                         )
 
                     validate_status_transition(
@@ -307,8 +739,74 @@ class RedisTaskRepository(TaskRepository):
                         }
                     )
 
+                    updated_parent: Task | None = None
+                    if relation_parent is not None:
+                        rolled_children = [
+                            updated if child.id == updated.id else child
+                            for child in children
+                        ]
+                        effective = [
+                            child
+                            for child in rolled_children
+                            if child.status != TaskStatus.CANCELLED
+                        ]
+                        done_count = sum(
+                            child.status == TaskStatus.DONE
+                            for child in effective
+                        )
+                        progress = (
+                            done_count * 100 // len(effective)
+                            if effective
+                            else 0
+                        )
+                        all_done = bool(effective) and done_count == len(effective)
+                        parent_status = relation_parent.status
+                        parent_completed_at = relation_parent.completed_at
+                        if all_done:
+                            parent_status = TaskStatus.DONE
+                            parent_completed_at = now
+                            progress = 100
+                        elif parent_status == TaskStatus.DONE:
+                            parent_status = TaskStatus.DOING
+                            parent_completed_at = None
+                        updated_parent = Task.model_validate(
+                            {
+                                **relation_parent.model_dump(),
+                                'status': parent_status,
+                                'progress': progress,
+                                'completed_at': parent_completed_at,
+                                'updated_at': now,
+                                'version': relation_parent.version + 1,
+                            }
+                        )
+                    elif children:
+                        effective = [
+                            child
+                            for child in children
+                            if child.status != TaskStatus.CANCELLED
+                        ]
+                        all_done = bool(effective) and all(
+                            child.status == TaskStatus.DONE
+                            for child in effective
+                        )
+                        if target_status == TaskStatus.DONE and not all_done:
+                            await pipeline.unwatch()
+                            raise TaskRepositoryConsistencyError(
+                                'Parent task cannot complete before its subtasks'
+                            )
+                        if all_done and target_status != TaskStatus.DONE:
+                            await pipeline.unwatch()
+                            raise TaskRepositoryConsistencyError(
+                                'Parent task must remain DONE while all subtasks are done'
+                            )
+
                     pipeline.multi()
                     pipeline.set(task_redis_key, updated.model_dump_json())
+                    if updated_parent is not None and relation_parent_key is not None:
+                        pipeline.set(
+                            relation_parent_key,
+                            updated_parent.model_dump_json(),
+                        )
                     if status_idempotency_key:
                         pipeline.set(
                             status_idempotency_key,
@@ -316,12 +814,22 @@ class RedisTaskRepository(TaskRepository):
                                 {
                                     'task_id': task_id,
                                     'target_status': target_status.value,
+                                    'expected_version': expected_version,
+                                    'confirmed_reopen': confirmed_reopen,
                                     'task': updated.model_dump(mode='json'),
+                                    'parent_task': (
+                                        updated_parent.model_dump(mode='json')
+                                        if updated_parent is not None
+                                        else None
+                                    ),
                                 }
                             ),
                         )
                     await pipeline.execute()
-                    return updated
+                    return TaskStatusUpdateResult(
+                        task=updated,
+                        parent_task=updated_parent,
+                    )
             except WatchError:
                 continue
 
@@ -371,6 +879,9 @@ class RedisTaskRepository(TaskRepository):
     def _user_index_key(self, user_id: str) -> str:
         return self._key('tasks', user_id)
 
+    def _children_index_key(self, user_id: str, parent_id: str) -> str:
+        return self._key('task_children', user_id, parent_id)
+
     def _idempotency_key(self, user_id: str, idempotency_key: str) -> str:
         return self._key('idempotency', 'create_task', user_id, idempotency_key)
 
@@ -397,6 +908,32 @@ class RedisTaskRepository(TaskRepository):
             user_id,
             idempotency_key,
         )
+
+    def _batch_idempotency_key(
+        self,
+        user_id: str,
+        idempotency_key: str,
+    ) -> str:
+        return self._key(
+            'idempotency',
+            'create_subtasks_batch',
+            user_id,
+            idempotency_key,
+        )
+
+    @staticmethod
+    def _batch_fingerprint(batch: SubtaskBatchCreate) -> str:
+        payload = json.dumps(
+            batch.model_dump(mode='json'),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(',', ':'),
+        )
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+    @staticmethod
+    def _normalized_title(value: str) -> str:
+        return re.sub(r'[\W_]+', '', value, flags=re.UNICODE).casefold()
 
     @staticmethod
     def _deserialize(payload: Any) -> Task:

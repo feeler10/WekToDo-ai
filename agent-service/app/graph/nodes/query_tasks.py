@@ -18,6 +18,7 @@ from app.services.task_response import (
     format_multiple_matches_response,
     format_task_detail_response,
     format_task_list_response,
+    format_subtask_list_response,
     format_zero_match_response,
 )
 from app.tools.task_tools import query_tasks
@@ -76,6 +77,12 @@ async def query_task_data(
                 user_id=user_id,
                 tasks=result.items,
             )
+            matched_subtasks = None
+            if query_intent.include_subtasks and len(matched.tasks) == 1:
+                matched_subtasks = await repository.list_children(
+                    user_id=user_id,
+                    parent_id=matched.tasks[0].id,
+                )
             return _match_result(
                 matched.tasks,
                 query_plan=serialized_plan,
@@ -86,7 +93,13 @@ async def query_task_data(
                 timezone_name=state.get('timezone', 'UTC'),
                 now=now,
                 pending_ttl=pending_ttl,
+                include_subtasks=query_intent.include_subtasks,
+                subtasks=matched_subtasks,
             )
+        hierarchy_result = await query_tasks(
+            repository=repository,
+            query=TaskQuery(user_id=state['user_id'], limit=100),
+        )
     except Exception as exc:
         return {'error_message': f'Task query failed: {exc}'}
 
@@ -102,6 +115,7 @@ async def query_task_data(
             result.items,
             plan=plan,
             timezone_name=state.get('timezone', 'UTC'),
+            all_tasks=hierarchy_result.items,
         ),
         'error_message': None,
     }
@@ -118,6 +132,8 @@ def _match_result(
     timezone_name: str,
     now: datetime,
     pending_ttl: timedelta,
+    include_subtasks: bool,
+    subtasks: list[Task] | None,
 ) -> dict[str, object]:
     serialized = [
         candidate.model_dump(mode='json')
@@ -132,8 +148,16 @@ def _match_result(
             'candidate_tasks': [],
             'selected_task': selected,
             'pending_task_selection': None,
-            'final_response': format_task_detail_response(
-                candidates[0], timezone_name=timezone_name
+            'final_response': (
+                format_subtask_list_response(
+                    candidates[0],
+                    subtasks or [],
+                    timezone_name=timezone_name,
+                )
+                if include_subtasks
+                else format_task_detail_response(
+                    candidates[0], timezone_name=timezone_name
+                )
             ),
             'error_message': None,
         }
@@ -153,6 +177,7 @@ def _match_result(
                 task.id: task.version for task in candidates
             },
             query_plan=query_plan,
+            include_subtasks=include_subtasks,
             reference=reference,
             created_at=now,
             expires_at=now + pending_ttl,

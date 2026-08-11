@@ -45,6 +45,14 @@ class TaskCreate(BaseModel):
     urgency_score: int | None = Field(default=None, ge=0, le=100)
     priority_reason: str | None = None
     is_ai_generated: bool = False
+    subtask_order: int | None = Field(default=None, ge=1)
+    depends_on_task_ids: list[str] = Field(default_factory=list)
+    completion_weight: int = Field(default=1, ge=1)
+    creation_source: Literal[
+        'manual',
+        'ai_task_parse',
+        'ai_decomposition',
+    ] | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -131,6 +139,14 @@ class Task(BaseModel):
     priority_reason: str | None = None
     progress: int = Field(default=0, ge=0, le=100)
     is_ai_generated: bool = False
+    subtask_order: int | None = Field(default=None, ge=1)
+    depends_on_task_ids: list[str] = Field(default_factory=list)
+    completion_weight: int = Field(default=1, ge=1)
+    creation_source: Literal[
+        'manual',
+        'ai_task_parse',
+        'ai_decomposition',
+    ] | None = None
     created_at: AwareDatetime = Field(default_factory=utc_now)
     updated_at: AwareDatetime = Field(default_factory=utc_now)
     completed_at: AwareDatetime | None = None
@@ -142,6 +158,10 @@ class Task(BaseModel):
             raise ValueError('updated_at must not be earlier than created_at')
         if self.completed_at is not None and self.completed_at < self.created_at:
             raise ValueError('completed_at must not be earlier than created_at')
+        if len(set(self.depends_on_task_ids)) != len(self.depends_on_task_ids):
+            raise ValueError('depends_on_task_ids must be unique')
+        if self.id in self.depends_on_task_ids:
+            raise ValueError('Task cannot depend on itself')
 
         expected_priority = self.user_priority or self.ai_priority
         expected_source: Literal['ai', 'user'] | None = None

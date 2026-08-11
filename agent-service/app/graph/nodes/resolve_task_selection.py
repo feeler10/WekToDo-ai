@@ -14,6 +14,7 @@ from app.services.task_response import (
     format_selection_error,
     format_stale_candidate_response,
     format_task_detail_response,
+    format_subtask_list_response,
 )
 from app.services.task_selection import (
     TaskSelectionError,
@@ -120,7 +121,11 @@ async def resolve_task_selection(
                     operation_label=(
                         '查看'
                         if pending.operation == IntentType.QUERY_TASKS
-                        else '更新'
+                        else (
+                            '拆解'
+                            if pending.operation == IntentType.DECOMPOSE_TASK
+                            else '更新'
+                        )
                     ),
                 )
             ),
@@ -146,16 +151,31 @@ async def resolve_task_selection(
 
     serialized = selected.model_dump(mode='json')
     if pending.operation == IntentType.QUERY_TASKS:
+        if pending.include_subtasks:
+            try:
+                subtasks = await repository.list_children(
+                    user_id=state['user_id'],
+                    parent_id=selected.id,
+                )
+            except Exception as exc:
+                return {'error_message': f'读取子任务失败：{exc}'}
+            final_response = format_subtask_list_response(
+                selected,
+                subtasks,
+                timezone_name=state.get('timezone', 'UTC'),
+            )
+        else:
+            final_response = format_task_detail_response(
+                selected,
+                timezone_name=state.get('timezone', 'UTC'),
+            )
         return {
             'pending_task_selection': None,
             'candidate_tasks': [],
             'selected_task': serialized,
             'task_results': [serialized],
             'pending_route': 'handled',
-            'final_response': format_task_detail_response(
-                selected,
-                timezone_name=state.get('timezone', 'UTC'),
-            ),
+            'final_response': final_response,
             'error_message': None,
         }
 
@@ -166,6 +186,17 @@ async def resolve_task_selection(
             'selected_task': serialized,
             'task_update_message': pending.task_update_message,
             'pending_route': 'selected_attribute_update',
+            'final_response': None,
+            'error_message': None,
+        }
+
+    if pending.operation == IntentType.DECOMPOSE_TASK:
+        return {
+            'pending_task_selection': None,
+            'candidate_tasks': [],
+            'selected_task': serialized,
+            'decomposition_message': pending.decomposition_message,
+            'pending_route': 'selected_decomposition',
             'final_response': None,
             'error_message': None,
         }

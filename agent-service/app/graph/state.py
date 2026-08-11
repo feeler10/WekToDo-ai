@@ -42,6 +42,12 @@ class TaskAgentState(TypedDict, total=False):
     task_results: list[dict[str, Any]]
     candidate_tasks: list[dict[str, Any]]
     selected_task: dict[str, Any] | None
+    parent_task: dict[str, Any] | None
+    existing_subtasks: list[dict[str, Any]]
+    subtask_plan_draft: dict[str, Any] | None
+    subtask_plan: dict[str, Any] | None
+    created_subtasks: list[dict[str, Any]]
+    decomposition_message: str | None
     updated_task: dict[str, Any] | None
     task_update_result: dict[str, Any] | None
     task_update: dict[str, Any] | None

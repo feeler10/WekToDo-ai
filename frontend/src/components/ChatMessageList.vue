@@ -5,7 +5,7 @@ import ConfirmationCard from './ConfirmationCard.vue'
 import type {
   ChatMessage,
   ConfirmationAction,
-  TaskDraftEdit,
+  ConfirmationOptions,
 } from '../types/agent'
 
 const props = defineProps<{
@@ -17,7 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   action: [
     action: ConfirmationAction,
-    options?: { edits?: TaskDraftEdit; feedback?: string },
+    options?: ConfirmationOptions,
   ]
 }>()
 
@@ -36,7 +36,7 @@ watch(
 
 function forwardAction(
   action: ConfirmationAction,
-  options?: { edits?: TaskDraftEdit; feedback?: string },
+  options?: ConfirmationOptions,
 ) {
   emit('action', action, options)
 }

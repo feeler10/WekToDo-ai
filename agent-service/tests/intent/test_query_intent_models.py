@@ -21,6 +21,11 @@ def test_task_query_intent_accepts_aware_custom_range() -> None:
     assert query.end_at == end
 
 
+def test_subtask_expansion_is_explicit_and_disabled_by_default() -> None:
+    assert TaskQueryIntent().include_subtasks is False
+    assert TaskQueryIntent(include_subtasks=True).include_subtasks is True
+
+
 @pytest.mark.parametrize(
     'payload',
     [

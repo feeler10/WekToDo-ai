@@ -4,6 +4,9 @@ import { computed, reactive, ref, watch } from 'vue'
 import type {
   AgentResponse,
   ConfirmationAction,
+  ConfirmationOptions,
+  SubtaskDraft,
+  SubtaskPlanEdit,
   TaskDraftEdit,
   TaskPriority,
 } from '../types/agent'
@@ -16,12 +19,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   action: [
     action: ConfirmationAction,
-    options?: { edits?: TaskDraftEdit; feedback?: string },
+    options?: ConfirmationOptions,
   ]
 }>()
 
 const editing = ref(false)
 const draft = computed(() => props.response.task_draft)
+const plan = computed(() => props.response.subtask_plan)
 const pending = computed(() => props.response.pending_action)
 const isStatusUpdate = computed(
   () => pending.value?.action_type === 'update_task_status',
@@ -29,14 +33,22 @@ const isStatusUpdate = computed(
 const isAttributeUpdate = computed(
   () => pending.value?.action_type === 'update_task',
 )
+const isSubtaskBatch = computed(
+  () => pending.value?.action_type === 'create_subtasks_batch',
+)
 const isRestrictedUpdate = computed(
   () => isStatusUpdate.value || isAttributeUpdate.value,
 )
 const confirmationTitle = computed(() => {
   if (isStatusUpdate.value) return '确认状态更新'
   if (isAttributeUpdate.value) return '确认属性修改'
+  if (isSubtaskBatch.value) return '确认任务拆解方案'
   return '确认创建任务'
 })
+
+const subtaskEditSummary = ref<string | null>(null)
+const subtaskEditItems = ref<SubtaskDraft[]>([])
+const subtaskEditError = ref<string | null>(null)
 
 const editForm = reactive<TaskDraftEdit>({
   title: draft.value?.title,
@@ -123,6 +135,14 @@ watch([deadlineDate, deadlineTime], () => {
   deadlineError.value = null
 })
 
+watch(
+  () => pending.value?.id,
+  () => {
+    editing.value = false
+    subtaskEditError.value = null
+  },
+)
+
 function parseShanghaiDateTime(value: string | null | undefined) {
   const instant = value ? new Date(value) : new Date()
   if (Number.isNaN(instant.getTime())) return null
@@ -148,6 +168,18 @@ function parseShanghaiDateTime(value: string | null | undefined) {
 }
 
 function startEditing() {
+  if (isSubtaskBatch.value) {
+    const currentPlan = plan.value
+    if (!currentPlan) return
+    subtaskEditSummary.value = currentPlan.summary
+    subtaskEditItems.value = currentPlan.items.map((item) => ({
+      ...item,
+      depends_on: [...item.depends_on],
+    }))
+    subtaskEditError.value = null
+    editing.value = true
+    return
+  }
   const currentDraft = draft.value
   if (!currentDraft) return
 
@@ -171,6 +203,29 @@ function buildShanghaiIso(date: string, time: string) {
 
 
 function submitEdit() {
+  if (isSubtaskBatch.value) {
+    const items = subtaskEditItems.value.map((item, index) => ({
+      ...item,
+      title: item.title.trim(),
+      description: item.description.trim(),
+      order: index + 1,
+    }))
+    if (items.length < 3) {
+      subtaskEditError.value = '拆解方案至少需要 3 个子任务'
+      return
+    }
+    if (items.some((item) => !item.title)) {
+      subtaskEditError.value = '每个子任务都必须填写标题'
+      return
+    }
+    const edits: SubtaskPlanEdit = {
+      summary: subtaskEditSummary.value?.trim() || null,
+      items,
+    }
+    emit('action', 'edit', { edits })
+    editing.value = false
+    return
+  }
   if (!editForm.title?.trim()) return
   if (!deadlineDate.value) {
     deadlineError.value = '请选择截止日期'
@@ -217,6 +272,18 @@ function reject() {
 
 function regenerate() {
   sendAction('regenerate')
+}
+
+function displayedSubtaskDeadline(value: string | null) {
+  if (!value) return null
+  const parsed = parseShanghaiDateTime(value)
+  return parsed ? `${parsed.date} ${parsed.time}` : value
+}
+
+function dependencyLabel(stepKey: string) {
+  const items = editing.value ? subtaskEditItems.value : plan.value?.items || []
+  const dependency = items.find((item) => item.step_key === stepKey)
+  return dependency ? `${dependency.order}. ${dependency.title}` : stepKey
 }
 </script>
 
@@ -267,6 +334,103 @@ function regenerate() {
           {{ attributeValue('user_priority') }}
         </a-descriptions-item>
       </a-descriptions>
+    </template>
+
+    <template v-else-if='isSubtaskBatch && plan'>
+      <div v-if='!editing' class='subtask-plan'>
+        <div class='subtask-plan-context'>
+          <div>
+            <span class='subtask-plan-label'>父任务</span>
+            <strong>{{ response.parent_task?.title || response.task?.title || plan.parent_task_id }}</strong>
+          </div>
+          <a-tag color='blue'>{{ plan.items.length }} 个子任务</a-tag>
+        </div>
+
+        <p v-if='plan.summary' class='subtask-plan-summary'>
+          {{ plan.summary }}
+        </p>
+
+        <a-alert
+          v-for='warning in plan.warnings'
+          :key='warning'
+          class='subtask-warning'
+          type='warning'
+          show-icon
+          :message='warning'
+        />
+
+        <ol class='subtask-items'>
+          <li
+            v-for='item in plan.items'
+            :key='item.step_key'
+            class='subtask-item'
+          >
+            <div class='subtask-item-heading'>
+              <span class='subtask-order'>{{ item.order }}</span>
+              <strong>{{ item.title }}</strong>
+              <span v-if='item.estimated_minutes' class='subtask-duration'>
+                {{ item.estimated_minutes }} 分钟
+              </span>
+            </div>
+            <p v-if='item.description' class='subtask-description'>
+              {{ item.description }}
+            </p>
+            <div
+              v-if='item.depends_on.length || item.deadline'
+              class='subtask-meta'
+            >
+              <span v-if='item.depends_on.length'>
+                前置：{{ item.depends_on.map(dependencyLabel).join('、') }}
+              </span>
+              <span v-if='item.deadline'>
+                截止：{{ displayedSubtaskDeadline(item.deadline) }}
+              </span>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <a-form v-else layout='vertical' class='subtask-edit-form'>
+        <a-alert
+          v-if='subtaskEditError'
+          class='subtask-edit-error'
+          type='error'
+          show-icon
+          :message='subtaskEditError'
+        />
+        <a-form-item label='方案说明'>
+          <a-textarea
+            v-model:value='subtaskEditSummary'
+            :rows='2'
+            :maxlength='1000'
+          />
+        </a-form-item>
+        <div
+          v-for='item in subtaskEditItems'
+          :key='item.step_key'
+          class='subtask-edit-item'
+        >
+          <div class='subtask-edit-heading'>
+            <span class='subtask-order'>{{ item.order }}</span>
+            <strong>步骤 {{ item.order }}</strong>
+            <span v-if='item.depends_on.length' class='subtask-dependency-note'>
+              前置：{{ item.depends_on.map(dependencyLabel).join('、') }}
+            </span>
+          </div>
+          <a-form-item label='标题' required>
+            <a-input v-model:value='item.title' :maxlength='200' />
+          </a-form-item>
+          <a-form-item label='描述'>
+            <a-textarea v-model:value='item.description' :rows='2' />
+          </a-form-item>
+          <a-form-item label='预计分钟'>
+            <a-input-number
+              v-model:value='item.estimated_minutes'
+              :min='1'
+            />
+          </a-form-item>
+        </div>
+      </a-form>
     </template>
 
     <template v-else-if='draft'>

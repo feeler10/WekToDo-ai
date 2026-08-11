@@ -33,6 +33,25 @@ def validate_query_completeness(
     context: IntentRecognitionContext,
 ) -> IntentResult:
     """Deterministically normalize clarification state for task queries."""
+    if result.intent == IntentType.DECOMPOSE_TASK:
+        reference = result.task_reference
+        if reference is None or _is_unresolved_reference(
+            reference,
+            context.message,
+        ):
+            return result.model_copy(
+                update={
+                    'task_reference': None,
+                    'needs_clarification': True,
+                    'clarification_reason': (
+                        ClarificationReason.MISSING_TASK_REFERENCE
+                    ),
+                    'clarification_question': (
+                        '你想拆解哪个任务？请告诉我任务名称。'
+                    ),
+                }
+            )
+        return _without_clarification(result)
     if result.intent != IntentType.QUERY_TASKS:
         return result
 
@@ -52,6 +71,13 @@ def validate_query_completeness(
         )
 
     query = result.query or TaskQueryIntent()
+    if query.include_subtasks and reference is None:
+        return _with_clarification(
+            result,
+            query=query,
+            reason=ClarificationReason.MISSING_TASK_REFERENCE,
+            question='你想查看哪个父任务的子任务？请告诉我任务名称。',
+        )
     if (
         result.clarification_reason
         == ClarificationReason.AMBIGUOUS_TIME_EXPRESSION

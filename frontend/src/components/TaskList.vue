@@ -1,7 +1,9 @@
 <script setup lang='ts'>
+import { computed, ref } from 'vue'
+
 import type { Task, TaskPriority, TaskStatus } from '../types/agent'
 
-defineProps<{
+const props = defineProps<{
   tasks: Task[]
   loading: boolean
 }>()
@@ -47,6 +49,55 @@ const transitions: Record<TaskStatus, TaskStatus[]> = {
   BLOCKED: ['DOING'],
   DONE: ['DOING'],
   CANCELLED: [],
+}
+
+const expandedTaskIds = ref<string[]>([])
+
+const rootTasks = computed(() =>
+  props.tasks.filter((task) => task.parent_id === null),
+)
+
+const childrenByParent = computed(() => {
+  const grouped = new Map<string, Task[]>()
+  for (const task of props.tasks) {
+    if (!task.parent_id) continue
+    const children = grouped.get(task.parent_id) || []
+    children.push(task)
+    grouped.set(task.parent_id, children)
+  }
+  for (const children of grouped.values()) {
+    children.sort((left, right) => {
+      const orderDifference =
+        (left.subtask_order ?? Number.MAX_SAFE_INTEGER) -
+        (right.subtask_order ?? Number.MAX_SAFE_INTEGER)
+      if (orderDifference !== 0) return orderDifference
+      return left.created_at.localeCompare(right.created_at)
+    })
+  }
+  return grouped
+})
+
+function childrenFor(taskId: string) {
+  return childrenByParent.value.get(taskId) || []
+}
+
+function hasChildren(taskId: string) {
+  return childrenFor(taskId).length > 0
+}
+
+function isExpanded(taskId: string) {
+  return expandedTaskIds.value.includes(taskId)
+}
+
+function toggleTask(taskId: string) {
+  if (!hasChildren(taskId)) return
+  expandedTaskIds.value = isExpanded(taskId)
+    ? expandedTaskIds.value.filter((id) => id !== taskId)
+    : [...expandedTaskIds.value, taskId]
+}
+
+function completedChildren(taskId: string) {
+  return childrenFor(taskId).filter((task) => task.status === 'DONE').length
 }
 
 function optionsFor(task: Task) {
@@ -107,31 +158,94 @@ function refresh() {
       <a-button size='small' :loading='loading' @click='refresh'>刷新</a-button>
     </div>
 
-    <a-empty v-if='tasks.length === 0' description='查询后将在这里显示任务' />
-    <a-list v-else :data-source='tasks' item-layout='vertical'>
+    <a-empty v-if='rootTasks.length === 0' description='查询后将在这里显示任务' />
+    <a-list v-else :data-source='rootTasks' item-layout='vertical'>
       <template #renderItem='{ item }'>
         <a-list-item class='task-item'>
-          <div class='task-title-row'>
-            <a-typography-text strong>{{ item.title }}</a-typography-text>
-            <div class='task-tags'>
-              <a-tag
-                v-if='priorityLabel(item)'
-                :color='priorityColor(item)'
-              >{{ priorityLabel(item) }}</a-tag>
-              <a-tag :color='statusColor(item)'>
-                {{ statusLabel(item) }}
-              </a-tag>
+          <div
+            class='task-summary'
+            :class='{ "task-summary-expandable": hasChildren(item.id) }'
+            :role='hasChildren(item.id) ? "button" : undefined'
+            :tabindex='hasChildren(item.id) ? 0 : undefined'
+            :aria-expanded='hasChildren(item.id) ? isExpanded(item.id) : undefined'
+            @click='toggleTask(item.id)'
+            @keydown.enter.prevent='toggleTask(item.id)'
+            @keydown.space.prevent='toggleTask(item.id)'
+          >
+            <div class='task-title-row'>
+              <div class='task-title-main'>
+                <span
+                  v-if='hasChildren(item.id)'
+                  class='task-expand-icon'
+                  aria-hidden='true'
+                >{{ isExpanded(item.id) ? '⌄' : '›' }}</span>
+                <a-typography-text strong>{{ item.title }}</a-typography-text>
+              </div>
+              <div class='task-tags'>
+                <a-tag
+                  v-if='priorityLabel(item)'
+                  :color='priorityColor(item)'
+                >{{ priorityLabel(item) }}</a-tag>
+                <a-tag :color='statusColor(item)'>
+                  {{ statusLabel(item) }}
+                </a-tag>
+              </div>
             </div>
+            <div v-if='hasChildren(item.id)' class='task-children-overview'>
+              <span>
+                {{ completedChildren(item.id) }}/{{ childrenFor(item.id).length }} 个子任务已完成
+              </span>
+              <a-progress
+                :percent='item.progress'
+                :show-info='false'
+                size='small'
+              />
+            </div>
+            <p class='task-meta'>{{ formatDeadline(item.deadline) }}</p>
+            <a-select
+              v-if='optionsFor(item).length'
+              size='small'
+              placeholder='更新状态'
+              :disabled='loading'
+              :options='optionsFor(item)'
+              @click.stop
+              @keydown.stop
+              @change='(value: unknown) => handleStatusChange(item, value)'
+            />
           </div>
-          <p class='task-meta'>{{ formatDeadline(item.deadline) }}</p>
-          <a-select
-            v-if='optionsFor(item).length'
-            size='small'
-            placeholder='更新状态'
-            :disabled='loading'
-            :options='optionsFor(item)'
-            @change='(value: unknown) => handleStatusChange(item, value)'
-          />
+
+          <div
+            v-if='hasChildren(item.id) && isExpanded(item.id)'
+            class='task-children'
+          >
+            <article
+              v-for='child in childrenFor(item.id)'
+              :key='child.id'
+              class='task-child'
+            >
+              <div class='task-title-row'>
+                <div class='task-title-main'>
+                  <span class='task-child-order'>{{ child.subtask_order }}</span>
+                  <a-typography-text strong>{{ child.title }}</a-typography-text>
+                </div>
+                <a-tag :color='statusColor(child)'>
+                  {{ statusLabel(child) }}
+                </a-tag>
+              </div>
+              <p v-if='child.description' class='task-child-description'>
+                {{ child.description }}
+              </p>
+              <p class='task-meta'>{{ formatDeadline(child.deadline) }}</p>
+              <a-select
+                v-if='optionsFor(child).length'
+                size='small'
+                placeholder='更新子任务状态'
+                :disabled='loading'
+                :options='optionsFor(child)'
+                @change='(value: unknown) => handleStatusChange(child, value)'
+              />
+            </article>
+          </div>
         </a-list-item>
       </template>
     </a-list>

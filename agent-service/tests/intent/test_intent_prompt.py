@@ -19,6 +19,9 @@ def test_prompt_covers_structured_query_and_write_boundaries() -> None:
     assert '论文做完了' in system
     assert 'target_status=DONE' in system
     assert 'MISSING_TASK_REFERENCE' in system
+    assert 'include_subtasks=false' in system
+    assert '论文任务有多少个子任务' in system
+    assert 'query.include_subtasks=true' in system
 
 
 def test_prompt_injects_time_context_and_custom_range_contract() -> None:

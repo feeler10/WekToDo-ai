@@ -25,6 +25,37 @@ export interface TaskDraftEdit {
   user_priority?: TaskPriority | null
 }
 
+export interface SubtaskDraft {
+  step_key: string
+  title: string
+  description: string
+  order: number
+  estimated_minutes: number | null
+  deadline: string | null
+  depends_on: string[]
+  completion_weight: number
+}
+
+export interface SubtaskPlan {
+  parent_task_id: string
+  parent_version: number
+  summary: string | null
+  items: SubtaskDraft[]
+  warnings: string[]
+}
+
+export interface SubtaskPlanEdit {
+  summary?: string | null
+  items: SubtaskDraft[]
+}
+
+export type ConfirmationEdits = TaskDraftEdit | SubtaskPlanEdit
+
+export interface ConfirmationOptions {
+  edits?: ConfirmationEdits
+  feedback?: string
+}
+
 export interface PendingAction {
   id: string
   user_id: string
@@ -57,6 +88,10 @@ export interface Task {
   priority_reason: string | null
   progress: number
   is_ai_generated: boolean
+  subtask_order: number | null
+  depends_on_task_ids: string[]
+  completion_weight: number
+  creation_source: 'manual' | 'ai_task_parse' | 'ai_decomposition' | null
   created_at: string
   updated_at: string
   completed_at: string | null
@@ -72,6 +107,9 @@ export interface AgentResponse {
   task: Task | null
   tasks: Task[]
   candidates: Task[]
+  subtask_plan: SubtaskPlan | null
+  subtasks: Task[]
+  parent_task: Task | null
 }
 
 export interface AgentChatRequest {
@@ -87,7 +125,7 @@ export interface AgentConfirmRequest {
   thread_id: string
   action_id: string
   action: ConfirmationAction
-  edits?: TaskDraftEdit
+  edits?: ConfirmationEdits
   feedback?: string
 }
 

@@ -12,6 +12,11 @@ from app.schemas.task import (
     TaskUpdate,
     utc_now,
 )
+from app.schemas.subtask import (
+    SubtaskBatchCreate,
+    SubtaskBatchResult,
+    TaskStatusUpdateResult,
+)
 
 
 _OPEN_STATUSES = {TaskStatus.TODO, TaskStatus.DOING, TaskStatus.BLOCKED}
@@ -121,6 +126,51 @@ async def update_task_status(
         target_status=target_status,
         expected_version=expected_version,
         confirmed_reopen=confirmed_reopen,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def update_task_status_with_rollup(
+    *,
+    repository: TaskRepository,
+    user_id: str,
+    task_id: str,
+    target_status: TaskStatus,
+    expected_version: int,
+    idempotency_key: str,
+    confirmed: bool,
+    confirmed_reopen: bool = False,
+) -> TaskStatusUpdateResult:
+    if not confirmed:
+        raise PermissionError(
+            'update_task_status_with_rollup requires user confirmation'
+        )
+    if not idempotency_key:
+        raise ValueError('idempotency_key must not be empty')
+    return await repository.update_status_with_rollup(
+        user_id=user_id,
+        task_id=task_id,
+        target_status=target_status,
+        expected_version=expected_version,
+        confirmed_reopen=confirmed_reopen,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def create_subtasks_batch(
+    *,
+    repository: TaskRepository,
+    batch_input: SubtaskBatchCreate | dict[str, object],
+    idempotency_key: str,
+    confirmed: bool,
+) -> SubtaskBatchResult:
+    if not confirmed:
+        raise PermissionError('create_subtasks_batch requires user confirmation')
+    if not idempotency_key:
+        raise ValueError('idempotency_key must not be empty')
+    batch = SubtaskBatchCreate.model_validate(batch_input)
+    return await repository.create_subtasks_batch(
+        batch,
         idempotency_key=idempotency_key,
     )
 

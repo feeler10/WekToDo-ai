@@ -24,6 +24,13 @@ Route = Literal[
     'execute_task_update',
     'prepare_status_update',
     'prepare_task_update',
+    'load_decomposition_context',
+    'generate_subtask_plan',
+    'validate_subtask_plan',
+    'prepare_subtask_confirmation',
+    'execute_create_subtasks_batch',
+    'edit_subtasks',
+    'regenerate_subtasks',
     'edit',
     'regenerate',
     'reject',
@@ -62,6 +69,8 @@ def route_after_task_selection(state: TaskAgentState) -> Route:
         return 'prepare_status_update'
     if state.get('pending_route') == 'selected_attribute_update':
         return 'parse_task_update'
+    if state.get('pending_route') == 'selected_decomposition':
+        return 'load_decomposition_context'
     return 'end'
 
 
@@ -81,7 +90,7 @@ def route_after_classification(state: TaskAgentState) -> Route:
     if state.get('intent') == IntentType.UPDATE_TASK.value:
         return 'resolve_task_reference'
     if state.get('intent') == IntentType.DECOMPOSE_TASK.value:
-        return 'respond_feature_unavailable'
+        return 'resolve_task_reference'
     if state.get('intent') == IntentType.GENERAL_CHAT.value:
         return 'respond_to_general_chat'
     return 'respond_unknown_intent'
@@ -97,6 +106,8 @@ def route_after_task_reference_resolution(state: TaskAgentState) -> Route:
     if state.get('error_message'):
         return 'handle_error'
     if state.get('selected_task'):
+        if state.get('intent') == IntentType.DECOMPOSE_TASK.value:
+            return 'load_decomposition_context'
         if state.get('intent') == IntentType.UPDATE_TASK.value:
             return 'parse_task_update'
         return 'prepare_status_update'
@@ -109,6 +120,24 @@ def route_after_task_update_parsing(state: TaskAgentState) -> Route:
     if not state.get('task_update'):
         return 'end'
     return 'prepare_task_update'
+
+
+def route_after_decomposition_context(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    return 'generate_subtask_plan'
+
+
+def route_after_subtask_generation(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    return 'validate_subtask_plan'
+
+
+def route_after_subtask_validation(state: TaskAgentState) -> Route:
+    if state.get('error_message'):
+        return 'handle_error'
+    return 'prepare_subtask_confirmation'
 
 
 def route_after_parsing(state: TaskAgentState) -> Route:
@@ -147,10 +176,18 @@ def route_after_confirmation(state: TaskAgentState) -> Route:
             return 'execute_status_update'
         if pending.get('action_type') == 'update_task':
             return 'execute_task_update'
+        if pending.get('action_type') == 'create_subtasks_batch':
+            return 'execute_create_subtasks_batch'
         return 'execute_create_task'
     if action == 'edit':
+        pending = state.get('pending_action') or {}
+        if pending.get('action_type') == 'create_subtasks_batch':
+            return 'edit_subtasks'
         return 'edit'
     if action == 'regenerate':
+        pending = state.get('pending_action') or {}
+        if pending.get('action_type') == 'create_subtasks_batch':
+            return 'regenerate_subtasks'
         return 'regenerate'
     return 'reject'
 

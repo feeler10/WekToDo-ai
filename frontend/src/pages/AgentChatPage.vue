@@ -7,8 +7,8 @@ import TaskList from '../components/TaskList.vue'
 import { useAgentStore } from '../stores/agent'
 import type {
   ConfirmationAction,
+  ConfirmationOptions,
   Task,
-  TaskDraftEdit,
   TaskStatus,
 } from '../types/agent'
 
@@ -32,7 +32,7 @@ const quickPrompts = [
 
 function handleAction(
   action: ConfirmationAction,
-  options?: { edits?: TaskDraftEdit; feedback?: string },
+  options?: ConfirmationOptions,
 ) {
   void store.respondToPending(action, options)
 }

@@ -267,6 +267,138 @@ p {
   background: #fbfcff;
 }
 
+.subtask-plan {
+  padding-bottom: 4px;
+}
+
+.subtask-plan-context,
+.subtask-item-heading,
+.subtask-edit-heading {
+  display: flex;
+  align-items: center;
+}
+
+.subtask-plan-context {
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.subtask-plan-context > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.subtask-plan-label {
+  color: #8a93a5;
+  font-size: 12px;
+}
+
+.subtask-plan-summary {
+  margin: 0 0 12px;
+  color: #667085;
+  line-height: 1.6;
+}
+
+.subtask-warning,
+.subtask-edit-error {
+  margin-bottom: 12px;
+}
+
+.subtask-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subtask-item {
+  position: relative;
+  margin-left: 14px;
+  padding: 0 0 18px 24px;
+  border-left: 2px solid #dce4ff;
+}
+
+.subtask-item:last-child {
+  padding-bottom: 8px;
+  border-left-color: transparent;
+}
+
+.subtask-order {
+  display: inline-grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  color: #3157d5;
+  background: #eaf0ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.subtask-item > .subtask-item-heading > .subtask-order {
+  position: absolute;
+  left: -14px;
+  top: 0;
+}
+
+.subtask-item-heading {
+  min-height: 26px;
+  gap: 9px;
+}
+
+.subtask-duration {
+  margin-left: auto;
+  color: #7a8499;
+  font-size: 12px;
+}
+
+.subtask-description {
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.subtask-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 7px;
+  color: #8a93a5;
+  font-size: 11px;
+}
+
+.subtask-edit-form {
+  max-height: 430px;
+  padding-right: 6px;
+  overflow-y: auto;
+}
+
+.subtask-edit-item {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #e4e9f4;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.subtask-edit-heading {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.subtask-edit-item .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.subtask-dependency-note {
+  margin-left: auto;
+  color: #8a93a5;
+  font-size: 11px;
+}
+
 .confirmation-actions {
   display: flex;
   justify-content: flex-end;
@@ -346,15 +478,114 @@ p {
   padding-inline: 0 !important;
 }
 
+.task-summary {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.task-summary-expandable {
+  cursor: pointer;
+}
+
+.task-summary-expandable:hover,
+.task-summary-expandable:focus-visible {
+  border-color: #d9e2ff;
+  outline: none;
+  background: #f8faff;
+}
+
 .task-title-row {
   justify-content: space-between;
   gap: 8px;
+}
+
+.task-title-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-expand-icon {
+  display: inline-grid;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 7px;
+  color: #3157d5;
+  background: #eaf0ff;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.task-children-overview {
+  display: grid;
+  grid-template-columns: auto minmax(70px, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0 30px;
+  color: #7e889c;
+  font-size: 11px;
+}
+
+.task-children-overview .ant-progress {
+  margin: 0;
 }
 
 .task-meta {
   margin: 7px 0 10px;
   color: #8992a4;
   font-size: 12px;
+}
+
+.task-children {
+  margin: 2px 0 8px 20px;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid #dce4ff;
+}
+
+.task-child {
+  position: relative;
+  padding: 12px;
+  border-bottom: 1px solid #edf0f6;
+  background: #fbfcff;
+}
+
+.task-child:last-child {
+  border-bottom: 0;
+}
+
+.task-child::before {
+  position: absolute;
+  left: -16px;
+  top: 22px;
+  width: 14px;
+  border-top: 2px solid #dce4ff;
+  content: '';
+}
+
+.task-child-order {
+  display: inline-grid;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 7px;
+  color: #3157d5;
+  background: #eaf0ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.task-child-description {
+  margin: 7px 0 0 30px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 @media (max-width: 960px) {

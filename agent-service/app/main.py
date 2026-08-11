@@ -15,6 +15,7 @@ from app.matching.factory import create_task_matcher
 from app.repositories.redis_task import RedisTaskRepository
 from app.services.agent import TaskAgentService
 from app.services.parser_factory import (
+    create_subtask_planner,
     create_task_parser,
     create_task_update_parser,
 )
@@ -50,6 +51,9 @@ def create_app(
                             pending_context_ttl_seconds=app_settings.pending_context_ttl_seconds,
                             parser=create_task_parser(app_settings),
                             task_update_parser=create_task_update_parser(
+                                app_settings
+                            ),
+                            subtask_planner=create_subtask_planner(
                                 app_settings
                             ),
                             intent_service=create_intent_service(app_settings),

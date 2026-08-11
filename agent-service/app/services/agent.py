@@ -11,6 +11,7 @@ from app.schemas.agent import (
 from app.schemas.audit import PendingAction
 from app.schemas.draft import TaskDraft
 from app.schemas.task import Task
+from app.schemas.subtask import SubtaskPlan
 
 
 class AgentThreadError(RuntimeError):
@@ -71,6 +72,12 @@ class TaskAgentService:
             'task_results': [],
             'candidate_tasks': [],
             'selected_task': None,
+            'parent_task': None,
+            'existing_subtasks': [],
+            'subtask_plan_draft': None,
+            'subtask_plan': None,
+            'created_subtasks': [],
+            'decomposition_message': None,
             'updated_task': None,
             'task_update_result': None,
             'task_update': None,
@@ -134,6 +141,9 @@ class TaskAgentService:
         final = values.get('final_response')
         intent_result = values.get('intent_result') or {}
         task_update_result = values.get('task_update_result') or {}
+        subtask_plan_data = values.get('subtask_plan')
+        created_subtasks = values.get('created_subtasks') or []
+        parent_data = values.get('parent_task')
 
         if pending:
             status = 'awaiting_confirmation'
@@ -143,6 +153,8 @@ class TaskAgentService:
                 message = '请确认任务状态更新'
             elif action_type == 'update_task':
                 message = str(final or '请确认任务属性修改')
+            elif action_type == 'create_subtasks_batch':
+                message = str(final or '请确认任务拆解方案和批量创建')
             else:
                 message = '请确认任务创建草稿'
         elif intent_result.get('needs_clarification') is True:
@@ -156,7 +168,7 @@ class TaskAgentService:
         elif error:
             status = 'error'
             message = str(final or error)
-        elif created:
+        elif created or created_subtasks:
             status = 'completed'
             message = str(final or '任务已创建。')
         elif values.get('confirmation_status') == 'rejected':
@@ -192,6 +204,19 @@ class TaskAgentService:
             candidates=[
                 Task.model_validate(task) for task in candidate_tasks
             ],
+            subtask_plan=(
+                SubtaskPlan.model_validate(subtask_plan_data)
+                if subtask_plan_data
+                else None
+            ),
+            subtasks=[
+                Task.model_validate(task) for task in created_subtasks
+            ],
+            parent_task=(
+                Task.model_validate(parent_data)
+                if parent_data
+                else None
+            ),
         )
 
     @staticmethod

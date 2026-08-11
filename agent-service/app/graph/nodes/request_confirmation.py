@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from app.graph.state import TaskAgentState
 from app.schemas.agent import ConfirmationAction, ConfirmationDecision
 from app.schemas.audit import PendingAction
+from app.schemas.subtask import SubtaskPlanEdit
 
 
 def request_confirmation(state: TaskAgentState) -> dict[str, object]:
@@ -15,7 +16,11 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
     )
     response = interrupt(
         {
-            'type': 'task_confirmation',
+            'type': (
+                'subtask_plan_confirmation'
+                if pending.action_type == 'create_subtasks_batch'
+                else 'task_confirmation'
+            ),
             'pending_action': pending.model_dump(mode='json'),
             'allowed_actions': [action.value for action in allowed_actions],
         }
@@ -49,24 +54,34 @@ def request_confirmation(state: TaskAgentState) -> dict[str, object]:
             update['final_response'] = '已取消任务状态更新。'
         elif pending.action_type == 'update_task':
             update['final_response'] = '已取消任务属性修改。'
+        elif pending.action_type == 'create_subtasks_batch':
+            update['final_response'] = '已取消任务拆解和子任务创建。'
         else:
             update['final_response'] = '已取消创建任务。'
     elif decision.action == ConfirmationAction.EDIT:
         edits = decision.edits
         assert edits is not None
-        draft_updates = edits.model_dump(
-            mode='json',
-            exclude_unset=True,
-            exclude={'user_priority'},
-        )
-        update['task_draft'] = {
-            **(state.get('task_draft') or {}),
-            **draft_updates,
-        }
-        if 'user_priority' in edits.model_fields_set:
-            update['user_priority'] = (
-                edits.user_priority.value if edits.user_priority else None
+        if pending.action_type == 'create_subtasks_batch':
+            if not isinstance(edits, SubtaskPlanEdit):
+                return {'error_message': '批量子任务编辑必须提交完整拆解方案'}
+            update['subtask_plan_draft'] = edits.model_dump(mode='json')
+            update['subtask_plan'] = None
+        else:
+            if isinstance(edits, SubtaskPlanEdit):
+                return {'error_message': '任务编辑不能使用子任务方案格式'}
+            draft_updates = edits.model_dump(
+                mode='json',
+                exclude_unset=True,
+                exclude={'user_priority'},
             )
+            update['task_draft'] = {
+                **(state.get('task_draft') or {}),
+                **draft_updates,
+            }
+            if 'user_priority' in edits.model_fields_set:
+                update['user_priority'] = (
+                    edits.user_priority.value if edits.user_priority else None
+                )
         update['confirmation_status'] = 'cancelled'
         update['pending_action'] = pending.model_copy(
             update={'confirmation_status': 'cancelled'}

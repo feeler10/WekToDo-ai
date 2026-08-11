@@ -6,8 +6,8 @@ import type {
   AgentResponse,
   ChatMessage,
   ConfirmationAction,
+  ConfirmationOptions,
   Task,
-  TaskDraftEdit,
   TaskStatus,
 } from '../types/agent'
 
@@ -53,8 +53,12 @@ export const useAgentStore = defineStore('agent', () => {
     if (response.tasks.length > 0) {
       tasks.value = response.tasks
     }
-    const responseTask = response.task
-    if (responseTask) {
+    const changedTasks = [
+      response.parent_task,
+      response.task,
+      ...response.subtasks,
+    ].filter((task): task is Task => Boolean(task))
+    for (const responseTask of changedTasks) {
       const index = tasks.value.findIndex((task) => task.id === responseTask.id)
       if (index >= 0) {
         tasks.value.splice(index, 1, responseTask)
@@ -92,7 +96,7 @@ export const useAgentStore = defineStore('agent', () => {
 
   async function respondToPending(
     action: ConfirmationAction,
-    options?: { edits?: TaskDraftEdit; feedback?: string },
+    options?: ConfirmationOptions,
   ) {
     const pending = pendingResponse.value?.pending_action
     if (!pending || loading.value) return

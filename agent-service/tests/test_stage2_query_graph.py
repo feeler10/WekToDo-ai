@@ -11,6 +11,7 @@ from app.intent.models import IntentResult, TaskQueryIntent
 from app.intent.providers.fake import FakeIntentClassifier
 from app.intent.service import IntentRecognitionService
 from app.repositories.redis_task import RedisTaskRepository
+from app.schemas.subtask import SubtaskBatchCreate, SubtaskDraft
 from app.schemas.task import Task, TaskPriority, TaskQuery, TaskStatus
 
 
@@ -187,6 +188,54 @@ async def test_specific_query_uses_matcher_without_pending_action(
         assert all(
             candidate['user_id'] == 'user-1'
             for candidate in result['candidate_tasks']
+        )
+    finally:
+        await redis.aclose()
+
+
+@pytest.mark.anyio
+async def test_explicit_subtask_query_reads_children_from_repository() -> None:
+    redis = FakeRedis(decode_responses=True)
+    repository = RedisTaskRepository(redis, key_prefix='stage2:subtask-query')
+    try:
+        await _store(
+            repository,
+            Task(id='parent', user_id='user-1', title='论文实验'),
+        )
+        await repository.create_subtasks_batch(
+            SubtaskBatchCreate(
+                user_id='user-1',
+                parent_task_id='parent',
+                expected_parent_version=1,
+                items=[
+                    SubtaskDraft(
+                        step_key='run',
+                        title='运行实验',
+                        order=2,
+                    ),
+                    SubtaskDraft(
+                        step_key='prepare',
+                        title='准备数据',
+                        order=1,
+                    ),
+                ],
+            ),
+            idempotency_key='create-subtasks',
+        )
+        intent_result = IntentResult(
+            intent=IntentType.QUERY_TASKS,
+            confidence=1,
+            reason='specific subtask query',
+            task_reference='论文实验',
+            query=TaskQueryIntent(include_subtasks=True),
+        )
+
+        result = await _graph(repository, intent_result).ainvoke(_state())
+
+        assert result['selected_task']['id'] == 'parent'
+        assert '“论文实验”共有 2 个子任务' in result['final_response']
+        assert result['final_response'].index('1. 准备数据') < (
+            result['final_response'].index('2. 运行实验')
         )
     finally:
         await redis.aclose()

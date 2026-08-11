@@ -7,6 +7,11 @@ from app.schemas.task import (
     TaskStatus,
     TaskUpdate,
 )
+from app.schemas.subtask import (
+    SubtaskBatchCreate,
+    SubtaskBatchResult,
+    TaskStatusUpdateResult,
+)
 
 
 class TaskRepository(ABC):
@@ -45,3 +50,40 @@ class TaskRepository(ABC):
         idempotency_key: str | None = None,
     ) -> Task:
         raise NotImplementedError
+
+    async def list_children(
+        self,
+        *,
+        user_id: str,
+        parent_id: str,
+    ) -> list[Task]:
+        result = await self.list_tasks(TaskQuery(user_id=user_id, limit=100))
+        return [task for task in result.items if task.parent_id == parent_id]
+
+    async def create_subtasks_batch(
+        self,
+        batch: SubtaskBatchCreate,
+        *,
+        idempotency_key: str,
+    ) -> SubtaskBatchResult:
+        raise NotImplementedError
+
+    async def update_status_with_rollup(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        target_status: TaskStatus,
+        expected_version: int,
+        confirmed_reopen: bool = False,
+        idempotency_key: str | None = None,
+    ) -> TaskStatusUpdateResult:
+        task = await self.update_status(
+            user_id=user_id,
+            task_id=task_id,
+            target_status=target_status,
+            expected_version=expected_version,
+            confirmed_reopen=confirmed_reopen,
+            idempotency_key=idempotency_key,
+        )
+        return TaskStatusUpdateResult(task=task)

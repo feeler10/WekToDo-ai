@@ -50,7 +50,10 @@ def _state(message: str) -> dict[str, str]:
             'Task reference resolution failed: '
             'repository must not be accessed: list_tasks',
         ),
-        (IntentType.DECOMPOSE_TASK, '任务拆解功能暂未开放。'),
+        (
+            IntentType.DECOMPOSE_TASK,
+            '你想拆解哪个任务？请告诉我任务名称。',
+        ),
     ],
 )
 async def test_switching_fake_result_changes_route_without_graph_changes(

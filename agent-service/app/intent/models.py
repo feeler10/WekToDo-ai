@@ -30,6 +30,7 @@ class TaskQueryIntent(BaseModel):
     time_scope: TimeScope = TimeScope.UNSPECIFIED
     statuses: set[TaskStatus] | None = None
     priorities: set[TaskPriority] | None = None
+    include_subtasks: bool = False
     start_at: AwareDatetime | None = None
     end_at: AwareDatetime | None = None
     raw_time_expression: str | None = Field(default=None, max_length=100)

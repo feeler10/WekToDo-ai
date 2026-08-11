@@ -3,6 +3,13 @@
 from app.graph.nodes.calculate_priority import calculate_priority
 from app.graph.nodes.classify_intent import classify_intent
 from app.graph.nodes.create_task import execute_create_task
+from app.graph.nodes.decompose_task import (
+    execute_create_subtasks_batch,
+    generate_subtask_plan,
+    load_decomposition_context,
+    prepare_subtask_confirmation,
+    validate_generated_subtask_plan,
+)
 from app.graph.nodes.handle_error import handle_error
 from app.graph.nodes.parse_task import parse_task
 from app.graph.nodes.parse_task_update import parse_task_update
@@ -30,6 +37,11 @@ __all__ = [
     'calculate_priority',
     'classify_intent',
     'execute_create_task',
+    'execute_create_subtasks_batch',
+    'generate_subtask_plan',
+    'load_decomposition_context',
+    'prepare_subtask_confirmation',
+    'validate_generated_subtask_plan',
     'handle_error',
     'parse_task',
     'parse_task_update',

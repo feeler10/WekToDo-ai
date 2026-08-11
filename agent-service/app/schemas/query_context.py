@@ -76,9 +76,11 @@ class PendingTaskSelection(BaseModel):
     candidate_task_ids: list[str] = Field(min_length=1)
     candidate_versions: dict[str, int]
     query_plan: dict[str, Any] | None = None
+    include_subtasks: bool = False
     reference: str = Field(min_length=1, max_length=200)
     target_status: TaskStatus | None = None
     task_update_message: str | None = Field(default=None, max_length=2000)
+    decomposition_message: str | None = Field(default=None, max_length=2000)
     created_at: AwareDatetime
     expires_at: AwareDatetime
 
@@ -97,6 +99,7 @@ class PendingTaskSelection(BaseModel):
             IntentType.QUERY_TASKS,
             IntentType.UPDATE_TASK,
             IntentType.UPDATE_TASK_STATUS,
+            IntentType.DECOMPOSE_TASK,
         }
         if self.operation not in allowed:
             raise ValueError('operation must be a selectable task operation')
@@ -107,21 +110,51 @@ class PendingTaskSelection(BaseModel):
         if any(version < 1 for version in self.candidate_versions.values()):
             raise ValueError('candidate versions must be positive')
         if self.operation == IntentType.UPDATE_TASK_STATUS:
+            if self.include_subtasks:
+                raise ValueError('status update cannot request subtasks')
             if self.target_status is None:
                 raise ValueError('target_status is required for status update')
             if self.query_plan is not None:
                 raise ValueError('status update cannot carry query_plan')
             if self.task_update_message is not None:
                 raise ValueError('status update cannot carry task_update_message')
+            if self.decomposition_message is not None:
+                raise ValueError('status update cannot carry decomposition_message')
         elif self.operation == IntentType.UPDATE_TASK:
+            if self.include_subtasks:
+                raise ValueError('task update cannot request subtasks')
             if not self.task_update_message:
                 raise ValueError(
                     'task_update_message is required for task attribute update'
                 )
             if self.query_plan is not None:
                 raise ValueError('task update cannot carry query_plan')
-        elif self.target_status is not None:
-            raise ValueError('query selection cannot carry target_status')
+            if self.decomposition_message is not None:
+                raise ValueError('task update cannot carry decomposition_message')
+        elif self.operation == IntentType.DECOMPOSE_TASK:
+            if self.include_subtasks:
+                raise ValueError('task decomposition cannot request subtasks')
+            if not self.decomposition_message:
+                raise ValueError(
+                    'decomposition_message is required for task decomposition'
+                )
+            if self.query_plan is not None or self.target_status is not None:
+                raise ValueError(
+                    'task decomposition cannot carry query or status data'
+                )
+            if self.task_update_message is not None:
+                raise ValueError(
+                    'task decomposition cannot carry task_update_message'
+                )
+        else:
+            if self.target_status is not None:
+                raise ValueError('query selection cannot carry target_status')
+            if self.task_update_message is not None:
+                raise ValueError('query selection cannot carry task_update_message')
+            if self.decomposition_message is not None:
+                raise ValueError(
+                    'query selection cannot carry decomposition_message'
+                )
         if self.expires_at <= self.created_at:
             raise ValueError('expires_at must be later than created_at')
         return self

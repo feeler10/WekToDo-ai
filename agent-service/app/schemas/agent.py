@@ -5,6 +5,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 from app.schemas.audit import PendingAction
 from app.schemas.draft import TaskDraft
 from app.schemas.task import Task, TaskPriority
+from app.schemas.subtask import SubtaskPlan, SubtaskPlanEdit
 
 
 class ConfirmationAction(str, Enum):
@@ -36,7 +37,7 @@ class ConfirmationDecision(BaseModel):
 
     action_id: str = Field(min_length=1)
     action: ConfirmationAction
-    edits: TaskDraftEdit | None = None
+    edits: TaskDraftEdit | SubtaskPlanEdit | None = None
     feedback: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode='after')
@@ -74,3 +75,6 @@ class AgentResponse(BaseModel):
     task: Task | None = None
     tasks: list[Task] = Field(default_factory=list)
     candidates: list[Task] = Field(default_factory=list)
+    subtask_plan: SubtaskPlan | None = None
+    subtasks: list[Task] = Field(default_factory=list)
+    parent_task: Task | None = None

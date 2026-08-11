@@ -16,6 +16,7 @@ def prepare_confirmation(state: TaskAgentState) -> dict[str, object]:
                 'priority_reason': state.get('priority_reason'),
                 'user_priority': state.get('user_priority'),
                 'is_ai_generated': True,
+                'creation_source': 'ai_task_parse',
             }
         )
         confirmation_round = state.get('confirmation_round', 0) + 1

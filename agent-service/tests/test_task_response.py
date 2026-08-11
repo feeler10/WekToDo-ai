@@ -5,6 +5,7 @@ from app.schemas.task import Task, TaskPriority, TaskStatus
 from app.services.task_query_plan import TaskQueryPlan
 from app.services.task_response import (
     format_multiple_matches_response,
+    format_subtask_list_response,
     format_task_detail_response,
     format_task_list_response,
     format_zero_match_response,
@@ -152,3 +153,104 @@ def test_multiple_candidates_preserve_input_order() -> None:
     )
 
     assert response.index('1. 论文修改') < response.index('2. 论文实验')
+
+
+def test_list_groups_children_under_parent_in_chat_copy() -> None:
+    parent = Task(
+        id='parent',
+        user_id='user-1',
+        title='完成扩散模型论文实验',
+        ai_priority=TaskPriority.URGENT,
+    )
+    children = [
+        Task(
+            id='child-1',
+            user_id='user-1',
+            parent_id='parent',
+            title='准备数据集',
+            subtask_order=1,
+        ),
+        Task(
+            id='child-2',
+            user_id='user-1',
+            parent_id='parent',
+            title='运行模型训练',
+            subtask_order=2,
+            ai_priority=TaskPriority.HIGH,
+        ),
+    ]
+    standalone = Task(
+        id='standalone',
+        user_id='user-1',
+        title='接水',
+    )
+
+    response = format_task_list_response(
+        [*children, parent, standalone],
+        plan=_plan(TimeScope.ALL),
+        timezone_name='Asia/Shanghai',
+    )
+
+    assert '共找到 2 个符合条件的任务' in response
+    assert '其中 1 个为高优先级' in response
+    assert '完成扩散模型论文实验（含 2 个子任务）' in response
+    assert '准备数据集' not in response
+    assert '运行模型训练' not in response
+
+
+def test_explicit_subtask_query_returns_ordered_real_children() -> None:
+    parent = Task(id='parent', user_id='user-1', title='论文实验')
+    subtasks = [
+        Task(
+            id='second',
+            user_id='user-1',
+            parent_id='parent',
+            title='运行实验',
+            subtask_order=2,
+        ),
+        Task(
+            id='first',
+            user_id='user-1',
+            parent_id='parent',
+            title='准备数据',
+            subtask_order=1,
+        ),
+    ]
+
+    response = format_subtask_list_response(
+        parent,
+        subtasks,
+        timezone_name='Asia/Shanghai',
+    )
+
+    assert '“论文实验”共有 2 个子任务' in response
+    assert response.index('1. 准备数据') < response.index('2. 运行实验')
+
+
+def test_filtered_child_result_is_summarized_by_stored_parent() -> None:
+    parent = Task(id='parent', user_id='user-1', title='论文实验')
+    matching_child = Task(
+        id='matching',
+        user_id='user-1',
+        parent_id='parent',
+        title='今天运行实验',
+        subtask_order=1,
+    )
+    other_child = Task(
+        id='other',
+        user_id='user-1',
+        parent_id='parent',
+        title='明天整理结果',
+        subtask_order=2,
+    )
+
+    response = format_task_list_response(
+        [matching_child],
+        plan=_plan(TimeScope.TODAY),
+        timezone_name='Asia/Shanghai',
+        all_tasks=[parent, matching_child, other_child],
+    )
+
+    assert '今天有 1 个符合条件的任务' in response
+    assert '论文实验（含 2 个子任务）' in response
+    assert '今天运行实验' not in response

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.intent.enums import ClarificationReason, IntentType, TimeScope
-from app.intent.models import IntentRecognitionContext
+from app.intent.models import IntentRecognitionContext, TaskQueryIntent
 from app.intent.providers.fake import FakeIntentClassifier
 from app.intent.service import IntentRecognitionService
 from app.schemas.task import TaskPriority, TaskStatus
@@ -100,6 +100,44 @@ async def test_specific_task_query_does_not_require_time_scope() -> None:
 
     assert result.task_reference == '论文任务'
     assert result.query is None
+    assert result.needs_clarification is False
+
+
+@pytest.mark.anyio
+async def test_subtask_query_requires_parent_reference() -> None:
+    result = await _recognize(
+        '有哪些子任务',
+        FakeIntentClassifier(
+            intent=IntentType.QUERY_TASKS,
+            query=TaskQueryIntent(include_subtasks=True),
+        ),
+    )
+
+    assert result.query is not None
+    assert result.query.include_subtasks is True
+    assert result.needs_clarification is True
+    assert (
+        result.clarification_reason
+        == ClarificationReason.MISSING_TASK_REFERENCE
+    )
+    assert result.clarification_question == (
+        '你想查看哪个父任务的子任务？请告诉我任务名称。'
+    )
+
+
+@pytest.mark.anyio
+async def test_subtask_query_with_parent_reference_is_complete() -> None:
+    result = await _recognize(
+        '论文实验有多少个子任务',
+        FakeIntentClassifier(
+            intent=IntentType.QUERY_TASKS,
+            task_reference='论文实验',
+            query=TaskQueryIntent(include_subtasks=True),
+        ),
+    )
+
+    assert result.query is not None
+    assert result.query.include_subtasks is True
     assert result.needs_clarification is False
 
 
