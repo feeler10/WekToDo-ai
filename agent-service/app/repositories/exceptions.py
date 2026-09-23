@@ -22,6 +22,10 @@ class TaskRepositoryConsistencyError(TaskRepositoryError):
     pass
 
 
+class IdempotencyConflictError(TaskRepositoryConsistencyError):
+    pass
+
+
 class TaskDeletionBlockedError(TaskRepositoryError):
     pass
 
@@ -35,4 +39,16 @@ class ConversationRepositoryConcurrencyError(ConversationRepositoryError):
 
 
 class ConversationRepositoryConsistencyError(ConversationRepositoryError):
+    pass
+
+
+class ObservabilityRepositoryError(RuntimeError):
+    pass
+
+
+class ObservabilityRepositoryConsistencyError(ObservabilityRepositoryError):
+    pass
+
+
+class ToolAuditPersistenceError(ObservabilityRepositoryError):
     pass

@@ -1,6 +1,6 @@
 # WekToDo-ai
 
-基于 LangGraph 的 AI 任务规划与执行助手。当前已完成 FastAPI、任务领域模型、Redis 任务存储，以及带 Human-in-the-loop 的任务创建工作流。
+基于 LangGraph 的 AI 任务规划与执行助手。当前已完成 P0 对话式任务闭环、P1a 直接子任务拆解与父子联动、多轮补参、对话刷新恢复，以及带持久化工具审计、基础 Trace 和对话内轨迹查看的 Human-in-the-loop 工作流。
 
 ## 目录结构
 
@@ -100,6 +100,16 @@ CONVERSATION_HISTORY_MAX_MESSAGES=200
 
 `keyword` 按精确 ID、精确标题、规范化标题和关键词包含的顺序匹配，并始终限制当前 `user_id`。`vector`、`hybrid` 是保留配置，当前选择后会明确失败，不会静默降级。
 
+每次 `chat` 和 `confirm` 请求都会返回服务端生成的 `trace_id`，HTTP 响应头同时包含 `X-Trace-Id`。确认、恢复和多轮续接通过 `parent_trace_id` 关联。需要排查某次请求时，可按当前用户读取 Trace、Graph 节点事件和关联工具日志：
+
+```http
+GET /api/agent/traces/{trace_id}?user_id={user_id}
+```
+
+Vue 对话页会在每条 Agent 消息下方展示“查看执行轨迹”。点击后打开只读抽屉，可以从原始问题开始，依次展开每个 Graph 节点的输入 State 与输出补丁、每次模型调用的输入和结构化 JSON、工具完整业务参数与返回结果，直至最终 AgentResponse；确认和多轮续接可继续跳转父 Trace。轨迹数据按需读取，不缓存在浏览器中。
+
+所有 Graph 业务错误通过 `AgentResponse.error` 返回稳定错误码、中文消息、是否可重试和 Trace ID；API 校验及服务错误使用相同的中文错误信封。工具审计默认保留 30 天，详细 Trace 默认保留 7 天且最多 1000 个事件，可通过 `TOOL_LOG_TTL_SECONDS`、`TRACE_TTL_SECONDS` 和 `TRACE_MAX_EVENTS` 调整。详细 Trace 包含用户问题、任务业务字段、模型消息输入/结构化输出和工具完整业务对象；API Key、Authorization、Cookie、Password、Secret 和访问令牌字段在持久化前强制替换为 `[REDACTED]`。
+
 
 ## v0.1.2 查询上下文闭环
 
@@ -189,3 +199,5 @@ npm run build
 ## 当前状态
 
 Milestone 7 已加入最小 Vue 对话页、任务确认卡、父子层级任务列表、确认式状态更新和确认式属性修改。P1a 后端已支持 AI 任务拆解、完整方案确认与编辑、Redis 原子批量创建直接子任务，以及子任务状态对父任务进度和完成状态的自动联动；v0.2.2 进一步支持自然语言删除计划、预览后原子批量删除，以及 `CANCELLED` 任务先恢复再继续原意图；v0.2.3 统一收录了同线程唯一任务焦点、受控单数指代、创建任务跨轮缺失参数收集，以及修改任务跨轮字段/新值收集、版本冲突防护与 Checkpoint 恢复；v0.2.4 增加版本化多轮评测、HTTP 零写入回归和隐私受限的待补充事件日志；v0.2.5 将展示用对话历史持久化到 Redis，并支持页面刷新后恢复当前会话。前端可展示批量删除清单与恢复确认，并在删除成功后同步移除本地任务。完整多租户认证、GPT 式对话侧栏、更复杂的多级任务树页面仍未建设。Rule/Semantic/Hybrid Provider、向量检索、多意图拆分、复数及列表序号上下文引用、自动样例学习、Milvus、每日简报、动态规划和复杂仪表盘仍未实现。
+
+v0.2.6 已补齐持久化 ToolExecutionLog、统一中文错误契约和基础 Trace，后续在对话页内升级为调试级详细 Trace。当前可以通过 Trace ID 关联 chat/confirm、Graph 节点 State、每次模型结构化输入输出、Interrupt/Resume 和真实工具参数/结果；写工具在审计起始记录无法持久化时不会执行。当前仍不统计 Token，也不建设跨服务追踪、独立 Trace 检索页或日志分析平台。

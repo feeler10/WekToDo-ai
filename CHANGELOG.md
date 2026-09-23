@@ -4,7 +4,49 @@
 
 ## [Unreleased]
 
-暂无。
+### Added
+
+- 在每条 Agent 消息下增加“查看执行轨迹”入口，并提供对话页内只读 Trace 抽屉。
+- 将摘要 Trace 升级为调试级全链路 Trace：持久化原始问题、Graph 节点输入 State/输出补丁、每次模型调用及重试的输入与结构化 JSON、工具完整业务参数/结果和最终 AgentResponse。
+- 抽屉按实际执行顺序展示全部事件，并为模型 JSON、节点 State 和工具对象提供逐项展开查看。
+
+### Security
+
+- 轨迹详情继续按当前 `user_id` 即时读取，不在浏览器持久化，也不开放客户端租户参数。
+- API Key、Authorization、Cookie、Password、Secret 和访问令牌字段在进入 Redis 前统一替换为 `[REDACTED]`。
+
+### Tests
+
+- 前端 `npm run typecheck` 与 `npm run build` 通过；本地真实页面验收覆盖轨迹打开、工具调用展示、父 Trace 跳转和刷新恢复，浏览器控制台无错误。
+- 后端完整测试结果：`378 passed, 9 warnings`，包含真实 Redis 与 Redis Checkpoint 集成测试。
+
+## [0.2.6] - 2026-08-11
+
+> 持久化完整工具执行审计，统一中文错误契约，并增加请求、Graph 节点、Interrupt/Resume 与工具调用关联的基础 Trace。
+
+### Added
+
+- 新增服务端 Trace ID、父 Trace、Trace 状态与节点事件契约；chat/confirm 响应体和 `X-Trace-Id` 响应头返回追踪编号。
+- 新增 Redis Trace 与 ToolExecutionLog 仓储，支持用户/租户隔离、TTL、节点事件上限和仓储重建后恢复。
+- 新增 `AuditedToolExecutor`，覆盖创建、查询、状态更新、属性修改、原子批量创建子任务、单项删除和批量删除工具。
+- 新增 `GET /api/agent/traces/{trace_id}?user_id=...`，返回 Trace 摘要、Graph 事件和关联工具日志。
+- 新增稳定 `AgentErrorInfo` 和中文错误目录，覆盖任务不存在、版本冲突、非法状态流转、删除阻塞、幂等冲突、审计不可用、Redis/模型不可用与未知异常。
+
+### Security and Reliability
+
+- 写工具必须先持久化 `STARTED` 审计记录；审计起始写入失败时保持业务零写入。
+- 业务工具成功后若日志最终更新失败，不把成功操作伪装成失败，保留可检测的 `STARTED` 记录并输出 critical 系统日志。
+- 工具输入输出按字段白名单持久化，不记录完整用户消息、任务标题/描述、Prompt、模型原始响应或确认反馈全文。
+- API 校验错误不再返回 Pydantic 英文消息、输入值或内部异常；未知错误只返回通用中文消息和 Trace ID。
+- Trace 和工具日志 Key 同时包含固定租户、用户和追踪标识，跨用户查询返回 404。
+
+### Tests
+
+- 新增 Trace/工具日志 Redis 持久化、TTL、隔离、脱敏、成功/失败结果和审计故障 fail-closed 测试。
+- 新增 chat/confirm 父子 Trace、Graph 节点事件、确认工具日志、Trace 查询 API 和跨用户隔离测试。
+- 新增中文请求校验与未知异常不泄露测试，以及真实 Redis 仓储重建恢复测试。
+- 后端完整测试结果：`377 passed, 9 warnings`，包含真实 Redis 与 Redis Checkpoint 集成测试。
+- 前端 `npm run typecheck` 与 `npm run build` 通过；Vite 保留现有大于 500 kB 的 chunk 警告。
 
 ## [0.2.5] - 2026-08-11
 

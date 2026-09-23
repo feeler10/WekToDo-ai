@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 from app.graph.parser import StructuredOutputMethod
 from app.schemas.task import Task, utc_now
 from app.schemas.task_attribute_update import TaskUpdateParseResult
+from app.services.observability import execute_observed_model
 
 
 class TaskUpdateParser(Protocol):
@@ -113,7 +114,7 @@ class StructuredOutputTaskUpdateParser:
             )
         last_error: Exception | None = None
         feedback = ''
-        for _attempt in range(self._max_attempts):
+        for attempt in range(1, self._max_attempts + 1):
             messages = [
                 (
                     'system',
@@ -130,7 +131,12 @@ class StructuredOutputTaskUpdateParser:
                 ),
             ]
             try:
-                output = await runnable.ainvoke(messages)
+                output = await execute_observed_model(
+                    component='task_update_parser',
+                    attempt=attempt,
+                    input_payload={'messages': messages},
+                    operation=lambda: runnable.ainvoke(messages),
+                )
                 result = (
                     output
                     if isinstance(output, TaskUpdateParseResult)

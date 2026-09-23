@@ -2,6 +2,91 @@ export type TaskStatus = 'TODO' | 'DOING' | 'DONE' | 'BLOCKED' | 'CANCELLED'
 export type TaskPriority = 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW'
 export type ConfirmationAction = 'approve' | 'edit' | 'reject' | 'regenerate'
 
+export interface AgentErrorInfo {
+  code: string
+  message: string
+  retryable: boolean
+  details: Record<string, unknown> | null
+  trace_id: string | null
+}
+
+export type TraceStatus = 'RUNNING' | 'INTERRUPTED' | 'SUCCEEDED' | 'FAILED'
+export type TraceEventType =
+  | 'REQUEST_STARTED'
+  | 'REQUEST_COMPLETED'
+  | 'NODE_STARTED'
+  | 'NODE_COMPLETED'
+  | 'MODEL_STARTED'
+  | 'MODEL_COMPLETED'
+  | 'INTERRUPTED'
+  | 'RESUMED'
+  | 'TOOL_STARTED'
+  | 'TOOL_COMPLETED'
+  | 'ERROR'
+
+export interface TraceRecord {
+  trace_id: string
+  parent_trace_id: string | null
+  tenant_id: string
+  user_id: string
+  thread_id: string
+  request_id: string
+  operation: string
+  status: TraceStatus
+  started_at: string
+  completed_at: string | null
+  duration_ms: number | null
+  error_code: string | null
+}
+
+export interface TraceEvent {
+  event_id: string
+  trace_id: string
+  tenant_id: string
+  user_id: string
+  thread_id: string
+  sequence: number
+  event_type: TraceEventType
+  node_name: string | null
+  started_at: string
+  completed_at: string | null
+  duration_ms: number | null
+  success: boolean | null
+  error_code: string | null
+  metadata: Record<string, unknown>
+}
+
+export type ToolExecutionStatus = 'STARTED' | 'SUCCEEDED' | 'FAILED'
+
+export interface ToolExecutionLog {
+  id: string
+  tenant_id: string
+  user_id: string
+  thread_id: string
+  request_id: string
+  trace_id: string
+  tool_call_id: string
+  action_id: string | null
+  tool_name: string
+  input_payload: Record<string, unknown>
+  output_payload: Record<string, unknown> | null
+  confirmed: boolean
+  idempotency_key: string | null
+  status: ToolExecutionStatus
+  success: boolean | null
+  duration_ms: number | null
+  error_code: string | null
+  error_message: string | null
+  started_at: string
+  completed_at: string | null
+}
+
+export interface TraceDetailResponse {
+  trace: TraceRecord
+  events: TraceEvent[]
+  tool_executions: ToolExecutionLog[]
+}
+
 export interface TaskDraft {
   title: string
   description: string
@@ -101,7 +186,9 @@ export interface Task {
 export interface AgentResponse {
   status: string
   thread_id: string
+  trace_id: string
   message: string
+  error: AgentErrorInfo | null
   pending_action: PendingAction | null
   task_draft: TaskDraft | null
   task: Task | null

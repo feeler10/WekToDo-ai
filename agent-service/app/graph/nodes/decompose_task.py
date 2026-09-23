@@ -14,6 +14,8 @@ from app.schemas.subtask import (
 from app.schemas.task import Task, utc_now
 from app.services.subtask_plan import validate_subtask_plan
 from app.tools.task_tools import create_subtasks_batch
+from app.services.error_mapping import error_state
+from app.services.observability import ObservabilityService, execute_observed_tool
 
 
 logger = logging.getLogger(__name__)
@@ -170,19 +172,33 @@ async def execute_create_subtasks_batch(
     state: TaskAgentState,
     *,
     repository: TaskRepository | None,
+    observability: ObservabilityService | None = None,
 ) -> dict[str, object]:
     if repository is None:
         return {'error_message': 'Task repository is not configured'}
     try:
         pending = PendingAction.model_validate(state.get('pending_action'))
-        result = await create_subtasks_batch(
-            repository=repository,
-            batch_input=pending.payload,
+        confirmed = pending.confirmation_status == 'approved'
+        result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='create_subtasks_batch',
+            input_payload={
+                **pending.payload,
+                'subtask_count': len(pending.payload.get('items', [])),
+            },
+            confirmed=confirmed,
             idempotency_key=pending.idempotency_key,
-            confirmed=pending.confirmation_status == 'approved',
+            action_id=pending.id,
+            operation=lambda: create_subtasks_batch(
+                repository=repository,
+                batch_input=pending.payload,
+                idempotency_key=pending.idempotency_key,
+                confirmed=confirmed,
+            ),
         )
     except Exception as exc:
-        return {'error_message': f'批量创建子任务失败：{exc}'}
+        return error_state(exc, trace_id=state.get('trace_id'))
     logger.info(
         'tool=create_subtasks_batch user_id=%s thread_id=%s action_id=%s '
         'parent_task_id=%s subtask_count=%s confirmed=true replayed=%s',

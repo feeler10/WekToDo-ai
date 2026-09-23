@@ -10,6 +10,8 @@ from app.services.task_attribute_update import build_task_update
 from app.services.task_update_clarification import (
     format_task_update_collection_input,
 )
+from app.services.error_mapping import error_state
+from app.services.exceptions import ComponentNotConfiguredError, ModelUnavailableError
 
 
 async def parse_task_update(
@@ -19,7 +21,10 @@ async def parse_task_update(
     clock: Callable[[], datetime],
 ) -> dict[str, object]:
     if parser is None:
-        return {'error_message': 'Task update parser is not configured'}
+        return error_state(
+            ComponentNotConfiguredError(),
+            trace_id=state.get('trace_id'),
+        )
     try:
         task = Task.model_validate(state.get('selected_task'))
         timezone_name = state.get('timezone', 'UTC')
@@ -62,7 +67,10 @@ async def parse_task_update(
             expected_version=task.version,
         )
     except Exception as exc:
-        return {'error_message': f'Task update parsing failed: {exc}'}
+        return error_state(
+            ModelUnavailableError() if not isinstance(exc, ModelUnavailableError) else exc,
+            trace_id=state.get('trace_id'),
+        )
     return {
         'task_update_result': parsed.model_dump(mode='json'),
         'task_update': update.model_dump(mode='json', exclude_unset=True),

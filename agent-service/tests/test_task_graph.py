@@ -87,7 +87,8 @@ async def test_query_intent_routes_without_task_parser() -> None:
     result = await graph.ainvoke(initial_state('查询我今天的任务'))
 
     assert result['intent'] == IntentType.QUERY_TASKS.value
-    assert result['final_response'] == 'Task repository is not configured'
+    assert result['final_response'] == '系统处理失败，请稍后重试并提供追踪编号。'
+    assert result['error']['code'] == 'workflow_error'
     assert parser.calls == []
 
 
@@ -119,7 +120,8 @@ async def test_naive_deadline_routes_validation_error() -> None:
     result = await graph.ainvoke(initial_state('创建一个任务'))
 
     assert result['validation_passed'] is False
-    assert result['error_message'] == 'Task validation failed'
+    assert result['error_message'] == '系统处理失败，请稍后重试并提供追踪编号。'
+    assert result['error']['code'] == 'workflow_error'
     assert any('timezone' in error for error in result['validation_errors'])
 
 
@@ -130,8 +132,9 @@ async def test_parser_exception_routes_to_handle_error() -> None:
 
     result = await graph.ainvoke(initial_state('创建一个任务'))
 
-    assert result['error_message'] == 'Task parsing failed: parser unavailable'
-    assert result['final_response'] == 'Task parsing failed: parser unavailable'
+    assert result['error_message'] == 'AI 服务暂时不可用，请稍后重试。'
+    assert result['final_response'] == 'AI 服务暂时不可用，请稍后重试。'
+    assert result['error']['code'] == 'model_unavailable'
 
 
 def test_graph_contains_expected_nodes_and_edges() -> None:

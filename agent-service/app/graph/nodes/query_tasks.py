@@ -22,6 +22,8 @@ from app.services.task_response import (
     format_zero_match_response,
 )
 from app.tools.task_tools import query_tasks
+from app.services.error_mapping import error_state
+from app.services.observability import ObservabilityService, execute_observed_tool
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +35,7 @@ async def query_task_data(
     task_matcher: TaskMatcher,
     clock: Callable[[], datetime],
     pending_ttl: timedelta,
+    observability: ObservabilityService | None = None,
 ) -> dict[str, object]:
     if repository is None:
         return {'error_message': 'Task repository is not configured'}
@@ -64,9 +67,15 @@ async def query_task_data(
             )
             repository_query = task_query_from_plan(plan)
 
-        result = await query_tasks(
-            repository=repository,
-            query=repository_query,
+        result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='query_tasks',
+            input_payload=repository_query.model_dump(mode='json'),
+            operation=lambda: query_tasks(
+                repository=repository,
+                query=repository_query,
+            ),
         )
         serialized_plan = (
             plan.model_dump(mode='json') if plan is not None else None
@@ -96,12 +105,19 @@ async def query_task_data(
                 include_subtasks=query_intent.include_subtasks,
                 subtasks=matched_subtasks,
             )
-        hierarchy_result = await query_tasks(
-            repository=repository,
-            query=TaskQuery(user_id=state['user_id'], limit=100),
+        hierarchy_query = TaskQuery(user_id=state['user_id'], limit=100)
+        hierarchy_result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='query_tasks',
+            input_payload=hierarchy_query.model_dump(mode='json'),
+            operation=lambda: query_tasks(
+                repository=repository,
+                query=hierarchy_query,
+            ),
         )
     except Exception as exc:
-        return {'error_message': f'Task query failed: {exc}'}
+        return error_state(exc, trace_id=state.get('trace_id'))
 
     items = [task.model_dump(mode='json') for task in result.items]
     return {

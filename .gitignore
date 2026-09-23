@@ -10,3 +10,4 @@ htmlcov/
 node_modules/
 dist/
 *.tsbuildinfo
+.claude/

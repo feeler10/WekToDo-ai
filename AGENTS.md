@@ -2,7 +2,7 @@
 
 ## 项目范围与技术栈
 
-本项目是基于 LangGraph 的个人任务规划 Agent。P0 后端采用 Python 3.11+、LangGraph、LangChain、FastAPI、Uvicorn、Pydantic、HTTPX 与 Redis；Redis 保存任务真实状态、待确认动作、Checkpoint、幂等键和锁。P0 最后仅提供 Vue 3 + TypeScript 的基础对话页。Milvus、Embedding、每日简报、动态重新规划和复杂前端均不在当前范围。开始工作前先阅读 `docs/PROJECT_TASK_BOOK.md` 与 `DEVELOPMENT_PLAN.md`。
+本项目是基于 LangGraph 的个人任务规划 Agent。P0 后端采用 Python 3.11+、LangGraph、LangChain、FastAPI、Uvicorn、Pydantic、HTTPX 与 Redis；Redis 保存任务真实状态、待确认动作、Checkpoint、幂等键和锁。P0 最后仅提供 Vue 3 + TypeScript 的基础对话页。P0 完成后进入 P1a，范围仅包括 AI 任务拆解、确定性方案校验、确认式原子批量创建直接子任务，以及子任务状态对父任务进度和完成状态的自动联动。Milvus、Embedding、每日简报、动态重新规划和复杂前端均不在当前范围。开始工作前先阅读 `docs/PROJECT_TASK_BOOK.md` 与 `DEVELOPMENT_PLAN.md`。
 
 ## 目录规范
 
@@ -35,4 +35,4 @@ Python 使用四空格、类型注解、`snake_case` 模块/函数/变量和 `Pa
 
 ## 安全、提交与禁止事项
 
-任何写操作必须经过确认、归属校验、幂等校验、版本/状态校验并记录最小审计日志；查询任务状态必须读取 Redis，不得依赖模型记忆。严禁提交 `.env`、密钥或用户数据，严禁绕过 Human-in-the-loop，严禁未经批准扩展 P1/P2、多 Agent、MCP、邮件/日历自动操作或高风险外部操作。提交使用 Conventional Commits，例如 `feat: add task confirmation node`；PR 需说明范围、验证命令、配置变化及 UI 截图（如适用）。
+任何写操作必须经过确认、归属校验、幂等校验、版本/状态校验并记录最小审计日志；批量子任务必须在单个 Redis 事务中全有或全无地写入。用户确认子任务创建或状态更新后，父任务进度与完成状态的联动属于确定性领域副作用，不重复请求确认，但必须与触发它的子任务写入处于同一事务。查询任务状态必须读取 Redis，不得依赖模型记忆。严禁提交 `.env`、密钥或用户数据，严禁绕过 Human-in-the-loop，严禁未经批准扩展 P1a 之外的 P1/P2、多 Agent、MCP、邮件/日历自动操作或高风险外部操作。提交使用 Conventional Commits，例如 `feat: add task confirmation node`；PR 需说明范围、验证命令、配置变化及 UI 截图（如适用）。

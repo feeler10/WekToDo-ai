@@ -7,6 +7,9 @@ class TaskAgentState(TypedDict, total=False):
     user_message: str
     timezone: str
     request_id: str
+    trace_id: str
+    parent_trace_id: str | None
+    trace_operation: str
 
     intent: str
     intent_confidence: float
@@ -72,4 +75,5 @@ class TaskAgentState(TypedDict, total=False):
     task_update_message: str | None
 
     final_response: str | None
+    error: dict[str, Any] | None
     error_message: str | None

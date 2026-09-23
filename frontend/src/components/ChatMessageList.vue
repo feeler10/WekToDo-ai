@@ -19,6 +19,7 @@ const emit = defineEmits<{
     action: ConfirmationAction,
     options?: ConfirmationOptions,
   ]
+  trace: [traceId: string]
 }>()
 
 const container = ref<HTMLElement | null>(null)
@@ -60,6 +61,15 @@ function forwardAction(
       <div class='message-content'>
         <div class='message-label'>{{ message.role === 'user' ? '你' : 'WekToDo Agent' }}</div>
         <div class='message-bubble'>{{ message.content }}</div>
+        <a-button
+          v-if="message.response?.trace_id && message.response.trace_id !== 'untracked'"
+          class='trace-link'
+          type='link'
+          size='small'
+          @click="emit('trace', message.response.trace_id)"
+        >
+          查看执行轨迹 · {{ message.response.trace_id.slice(0, 8) }}
+        </a-button>
 
         <a-list
           v-if='message.response?.candidates.length'

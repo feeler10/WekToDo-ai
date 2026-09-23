@@ -1,7 +1,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from redis.asyncio import Redis
 
 from app.api.router import api_router
@@ -14,7 +15,9 @@ from app.intent.factory import create_intent_service
 from app.matching.factory import create_task_matcher
 from app.repositories.redis_task import RedisTaskRepository
 from app.repositories.redis_conversation import RedisConversationRepository
+from app.repositories.redis_observability import RedisObservabilityRepository
 from app.services.agent import TaskAgentService
+from app.services.observability import ObservabilityService
 from app.services.parser_factory import (
     create_subtask_planner,
     create_task_parser,
@@ -54,6 +57,18 @@ def create_app(
                             app_settings.conversation_history_max_messages
                         ),
                     )
+                    observability_repository = RedisObservabilityRepository(
+                        application.state.redis,
+                        tool_log_ttl_seconds=app_settings.tool_log_ttl_seconds,
+                        trace_ttl_seconds=app_settings.trace_ttl_seconds,
+                        trace_max_events=app_settings.trace_max_events,
+                    )
+                    observability = ObservabilityService(
+                        observability_repository
+                    )
+                    application.state.observability_repository = (
+                        observability_repository
+                    )
                     graph = build_task_graph(
                         GraphDependencies(
                             pending_context_ttl_seconds=app_settings.pending_context_ttl_seconds,
@@ -81,12 +96,14 @@ def create_app(
                             task_matcher=create_task_matcher(
                                 app_settings.task_matcher_provider
                             ),
+                            observability=observability,
                         ),
                         checkpointer=checkpointer,
                     )
                     application.state.agent_service = TaskAgentService(
                         graph,
                         conversation_repository=conversation_repository,
+                        observability=observability,
                     )
                     yield
         finally:
@@ -99,6 +116,14 @@ def create_app(
         lifespan=lifespan,
     )
     application.state.settings = app_settings
+
+    @application.middleware('http')
+    async def attach_trace_id(request: Request, call_next):
+        request.state.trace_id = str(uuid4())
+        response = await call_next(request)
+        response.headers['X-Trace-Id'] = request.state.trace_id
+        return response
+
     register_exception_handlers(application)
     application.include_router(api_router)
     return application

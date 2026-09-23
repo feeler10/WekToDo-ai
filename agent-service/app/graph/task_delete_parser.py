@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 from app.graph.parser import StructuredOutputMethod
 from app.schemas.task import utc_now
 from app.schemas.task_deletion import TaskDeleteParseResult
+from app.services.observability import execute_observed_model
 
 
 class TaskDeleteParser(Protocol):
@@ -115,7 +116,7 @@ class StructuredOutputTaskDeleteParser:
             )
         last_error: Exception | None = None
         feedback = ''
-        for _attempt in range(self._max_attempts):
+        for attempt in range(1, self._max_attempts + 1):
             messages = [
                 ('system', TASK_DELETE_SYSTEM_PROMPT + schema_instruction + feedback),
                 (
@@ -128,7 +129,12 @@ class StructuredOutputTaskDeleteParser:
                 ),
             ]
             try:
-                output = await runnable.ainvoke(messages)
+                output = await execute_observed_model(
+                    component='task_delete_parser',
+                    attempt=attempt,
+                    input_payload={'messages': messages},
+                    operation=lambda: runnable.ainvoke(messages),
+                )
                 result = (
                     output
                     if isinstance(output, TaskDeleteParseResult)

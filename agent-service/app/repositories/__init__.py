@@ -19,3 +19,4 @@ __all__ = [
     'TaskRepositoryConsistencyError',
     'TaskVersionConflictError',
 ]
+'''Repository interfaces and implementations.'''

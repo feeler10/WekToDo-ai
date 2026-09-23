@@ -1,6 +1,8 @@
 from app.graph.parser import TaskParser
 from app.graph.state import TaskAgentState
 from app.services.task_draft_clarification import format_task_collection_input
+from app.services.error_mapping import error_state
+from app.services.exceptions import ModelUnavailableError
 
 
 async def parse_task(
@@ -23,7 +25,10 @@ async def parse_task(
             )
         )
     except Exception as exc:
-        return {'error_message': f'Task parsing failed: {exc}'}
+        return error_state(
+            ModelUnavailableError() if not isinstance(exc, ModelUnavailableError) else exc,
+            trace_id=state.get('trace_id'),
+        )
     return {
         'task_draft': parsed,
         'parsed_task': None,

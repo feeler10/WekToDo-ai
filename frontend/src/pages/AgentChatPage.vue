@@ -1,10 +1,11 @@
 <script setup lang='ts'>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import ChatComposer from '../components/ChatComposer.vue'
 import ChatMessageList from '../components/ChatMessageList.vue'
 import TaskList from '../components/TaskList.vue'
+import TraceDrawer from '../components/TraceDrawer.vue'
 import { useAgentStore } from '../stores/agent'
 import type {
   ConfirmationAction,
@@ -30,6 +31,8 @@ const quickPrompts = [
   '今天有哪些任务？',
   '有哪些逾期任务？',
 ]
+const traceDrawerOpen = ref(false)
+const selectedTraceId = ref<string | null>(null)
 
 onMounted(() => {
   void store.initializeConversation()
@@ -44,6 +47,11 @@ function handleAction(
 
 function updateStatus(task: Task, status: TaskStatus) {
   void store.requestStatusUpdate(task, status)
+}
+
+function showTrace(traceId: string) {
+  selectedTraceId.value = traceId
+  traceDrawerOpen.value = true
 }
 </script>
 
@@ -105,6 +113,7 @@ function updateStatus(task: Task, status: TaskStatus) {
           :loading='loading'
           :active-action-id='pendingResponse?.pending_action?.id || null'
           @action='handleAction'
+          @trace='showTrace'
         />
 
         <div v-if='pendingResponse' class='pending-hint'>
@@ -124,5 +133,12 @@ function updateStatus(task: Task, status: TaskStatus) {
         @update-status='updateStatus'
       />
     </main>
+
+    <TraceDrawer
+      :open='traceDrawerOpen'
+      :trace-id='selectedTraceId'
+      :user-id='userId'
+      @close='traceDrawerOpen = false'
+    />
   </div>
 </template>

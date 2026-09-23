@@ -47,8 +47,7 @@ def _state(message: str) -> dict[str, str]:
         ),
         (
             IntentType.UPDATE_TASK,
-            'Task reference resolution failed: '
-            'repository must not be accessed: list_tasks',
+            '系统处理失败，请稍后重试并提供追踪编号。',
         ),
         (
             IntentType.DECOMPOSE_TASK,

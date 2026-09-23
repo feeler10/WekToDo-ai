@@ -4,6 +4,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 
 from app.schemas.audit import PendingAction
 from app.schemas.draft import TaskDraft
+from app.schemas.errors import AgentErrorInfo
 from app.schemas.task import Task, TaskPriority
 from app.schemas.subtask import SubtaskPlan, SubtaskPlanEdit
 
@@ -69,7 +70,9 @@ class AgentResponse(BaseModel):
 
     status: str
     thread_id: str
+    trace_id: str = 'untracked'
     message: str
+    error: AgentErrorInfo | None = None
     pending_action: PendingAction | None = None
     task_draft: TaskDraft | None = None
     task: Task | None = None

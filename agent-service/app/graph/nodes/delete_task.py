@@ -33,6 +33,8 @@ from app.services.task_response import (
 )
 from app.services.task_query_plan import build_task_query_plan, task_query_from_plan
 from app.tools.task_tools import delete_task, delete_tasks_batch
+from app.services.error_mapping import error_state
+from app.services.observability import ObservabilityService, execute_observed_tool
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +472,7 @@ async def execute_task_delete(
     state: TaskAgentState,
     *,
     repository: TaskRepository | None,
+    observability: ObservabilityService | None = None,
 ) -> dict[str, object]:
     if repository is None:
         return {'error_message': 'Task repository is not configured'}
@@ -479,13 +482,23 @@ async def execute_task_delete(
         if pending.target_id is None:
             raise ValueError('Task delete target_id is required')
         payload = TaskDelete.model_validate(pending.payload)
-        result = await delete_task(
-            repository=repository,
-            user_id=payload.user_id,
-            task_id=pending.target_id,
-            delete_input=payload,
+        confirmed = pending.confirmation_status == 'approved'
+        result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='delete_task',
+            input_payload=pending.payload,
+            confirmed=confirmed,
             idempotency_key=pending.idempotency_key,
-            confirmed=pending.confirmation_status == 'approved',
+            action_id=pending.id,
+            operation=lambda: delete_task(
+                repository=repository,
+                user_id=payload.user_id,
+                task_id=pending.target_id or '',
+                delete_input=payload,
+                idempotency_key=pending.idempotency_key,
+                confirmed=confirmed,
+            ),
         )
         selected = Task.model_validate(state.get('selected_task'))
     except Exception as exc:
@@ -498,10 +511,12 @@ async def execute_task_delete(
             bool(pending and pending.confirmation_status == 'approved'),
             type(exc).__name__,
         )
-        return {
-            'final_response': _deletion_error_message(exc),
-            'error_message': _deletion_error_message(exc),
-        }
+        mapped = error_state(exc, trace_id=state.get('trace_id'))
+        if mapped['error'] and _deletion_error_message(exc):
+            mapped['final_response'] = _deletion_error_message(exc)
+            mapped['error_message'] = _deletion_error_message(exc)
+            mapped['error']['message'] = _deletion_error_message(exc)
+        return mapped
 
     logger.info(
         'tool=delete_task user_id=%s thread_id=%s task_id=%s '
@@ -536,6 +551,7 @@ async def execute_task_delete_batch(
     state: TaskAgentState,
     *,
     repository: TaskRepository | None,
+    observability: ObservabilityService | None = None,
 ) -> dict[str, object]:
     if repository is None:
         return {'error_message': 'Task repository is not configured'}
@@ -543,11 +559,24 @@ async def execute_task_delete_batch(
     try:
         pending = PendingAction.model_validate(state.get('pending_action'))
         batch = TaskDeleteBatch.model_validate(pending.payload)
-        result = await delete_tasks_batch(
-            repository=repository,
-            batch_input=batch,
+        confirmed = pending.confirmation_status == 'approved'
+        result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='delete_tasks_batch',
+            input_payload={
+                **pending.payload,
+                'count': len(pending.payload.get('items', [])),
+            },
+            confirmed=confirmed,
             idempotency_key=pending.idempotency_key,
-            confirmed=pending.confirmation_status == 'approved',
+            action_id=pending.id,
+            operation=lambda: delete_tasks_batch(
+                repository=repository,
+                batch_input=batch,
+                idempotency_key=pending.idempotency_key,
+                confirmed=confirmed,
+            ),
         )
     except Exception as exc:
         logger.warning(
@@ -560,7 +589,11 @@ async def execute_task_delete_batch(
             type(exc).__name__,
         )
         message = _deletion_error_message(exc)
-        return {'final_response': message, 'error_message': message}
+        mapped = error_state(exc, trace_id=state.get('trace_id'))
+        mapped['final_response'] = message
+        mapped['error_message'] = message
+        mapped['error']['message'] = message
+        return mapped
     logger.info(
         'tool=delete_tasks_batch user_id=%s thread_id=%s task_count=%s '
         'confirmed=true success=true replayed=%s',

@@ -6,6 +6,8 @@ from app.repositories.base import TaskRepository
 from app.schemas.audit import PendingAction
 from app.schemas.task import Task, TaskStatus, TaskStatusUpdate, utc_now
 from app.tools.task_tools import update_task_status_with_rollup
+from app.services.error_mapping import error_state
+from app.services.observability import ObservabilityService, execute_observed_tool
 
 
 def prepare_task_restore(state: TaskAgentState) -> dict[str, object]:
@@ -62,6 +64,7 @@ async def execute_task_restore(
     state: TaskAgentState,
     *,
     repository: TaskRepository | None,
+    observability: ObservabilityService | None = None,
 ) -> dict[str, object]:
     if repository is None:
         return {'error_message': 'Task repository is not configured'}
@@ -70,18 +73,28 @@ async def execute_task_restore(
         payload = TaskStatusUpdate.model_validate(pending.payload)
         if pending.target_id is None:
             raise ValueError('Restore target_id is required')
-        result = await update_task_status_with_rollup(
-            repository=repository,
-            user_id=payload.user_id,
-            task_id=pending.target_id,
-            target_status=TaskStatus.TODO,
-            expected_version=payload.expected_version,
-            confirmed_restore=True,
+        confirmed = pending.confirmation_status == 'approved'
+        result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='update_task_status_with_rollup',
+            input_payload=pending.payload,
+            confirmed=confirmed,
             idempotency_key=pending.idempotency_key,
-            confirmed=pending.confirmation_status == 'approved',
+            action_id=pending.id,
+            operation=lambda: update_task_status_with_rollup(
+                repository=repository,
+                user_id=payload.user_id,
+                task_id=pending.target_id or '',
+                target_status=TaskStatus.TODO,
+                expected_version=payload.expected_version,
+                confirmed_restore=True,
+                idempotency_key=pending.idempotency_key,
+                confirmed=confirmed,
+            ),
         )
     except Exception as exc:
-        return {'error_message': f'恢复任务失败：{exc}'}
+        return error_state(exc, trace_id=state.get('trace_id'))
     return {
         'selected_task': result.task.model_dump(mode='json'),
         'updated_task': result.task.model_dump(mode='json'),

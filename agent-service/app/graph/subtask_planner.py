@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 from app.graph.parser import StructuredOutputMethod
 from app.schemas.subtask import SubtaskPlanDraft
 from app.schemas.task import Task, utc_now
+from app.services.observability import execute_observed_model
 
 
 class SubtaskPlanner(Protocol):
@@ -73,8 +74,7 @@ class StructuredOutputSubtaskPlanner:
         last_error: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
             try:
-                output = await runnable.ainvoke(
-                    self._prompt(
+                prompt = self._prompt(
                         parent=parent,
                         user_message=user_message,
                         existing_children=existing_children,
@@ -82,6 +82,11 @@ class StructuredOutputSubtaskPlanner:
                         feedback=feedback,
                         validation_feedback=validation_feedback,
                     )
+                output = await execute_observed_model(
+                    component='subtask_planner',
+                    attempt=attempt,
+                    input_payload={'messages': prompt},
+                    operation=lambda: runnable.ainvoke(prompt),
                 )
                 draft = (
                     output

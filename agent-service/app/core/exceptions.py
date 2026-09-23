@@ -26,25 +26,40 @@ class AppError(Exception):
 
 
 async def handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
-    error: dict[str, Any] = {'code': exc.code, 'message': exc.message}
+    trace_id = getattr(_request.state, 'trace_id', None)
+    error: dict[str, Any] = {
+        'code': exc.code,
+        'message': exc.message,
+        'trace_id': trace_id,
+    }
     if exc.details is not None:
         error['details'] = jsonable_encoder(exc.details)
-    return JSONResponse(status_code=exc.status_code, content={'error': error})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={'error': error},
+        headers=_trace_headers(trace_id),
+    )
 
 
 async def handle_validation_error(
-    _request: Request,
+    request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
+    details = [
+        {'location': list(error['loc']), 'type': error['type']}
+        for error in exc.errors()
+    ]
     return JSONResponse(
         status_code=422,
         content={
             'error': {
                 'code': 'validation_error',
-                'message': 'Request validation failed',
-                'details': jsonable_encoder(exc.errors()),
+                'message': '请求参数不正确，请检查后重试。',
+                'trace_id': getattr(request.state, 'trace_id', None),
+                'details': jsonable_encoder(details),
             }
         },
+        headers=_trace_headers(getattr(request.state, 'trace_id', None)),
     )
 
 
@@ -60,10 +75,16 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
         content={
             'error': {
                 'code': 'internal_server_error',
-                'message': 'Internal server error',
+                'message': '系统处理失败，请稍后重试并提供追踪编号。',
+                'trace_id': getattr(request.state, 'trace_id', None),
             }
         },
+        headers=_trace_headers(getattr(request.state, 'trace_id', None)),
     )
+
+
+def _trace_headers(trace_id: str | None) -> dict[str, str]:
+    return {'X-Trace-Id': trace_id} if trace_id else {}
 
 
 def register_exception_handlers(app: FastAPI) -> None:

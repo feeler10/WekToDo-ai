@@ -19,6 +19,9 @@ from app.schemas.conversation import (
 from app.schemas.draft import TaskDraft
 from app.schemas.task import Task
 from app.schemas.subtask import SubtaskPlan
+from app.schemas.errors import AgentErrorInfo
+from app.schemas.trace import TraceDetailResponse, TraceRecord, TraceStatus
+from app.services.observability import ObservabilityService
 
 
 logger = logging.getLogger(__name__)
@@ -43,33 +46,57 @@ class AgentThreadConflictError(AgentThreadError):
     pass
 
 
+class AgentTraceNotFoundError(AgentThreadError):
+    pass
+
+
 class TaskAgentService:
     def __init__(
         self,
         graph: CompiledStateGraph,
         *,
         conversation_repository: ConversationRepository | None = None,
+        observability: ObservabilityService | None = None,
         tenant_id: str = DEFAULT_TENANT_ID,
     ) -> None:
         self._graph = graph
         self._conversation_repository = conversation_repository
         self._tenant_id = tenant_id
+        self._observability = observability or ObservabilityService(
+            tenant_id=tenant_id
+        )
 
     async def chat(self, request: AgentChatRequest) -> AgentResponse:
         config = self._config(request.user_id, request.thread_id)
         snapshot = await self._graph.aget_state(config)
+        previous = snapshot.values or {}
+        trace = await self._observability.start_trace(
+            user_id=request.user_id,
+            thread_id=request.thread_id,
+            request_id=request.request_id,
+            operation='chat',
+            parent_trace_id=previous.get('trace_id'),
+            input_payload=request.model_dump(mode='json'),
+        )
         if snapshot.next:
+            await self._observability.finish_trace(
+                trace,
+                status=TraceStatus.FAILED,
+                error_code='thread_conflict',
+            )
             raise AgentThreadConflictError(
                 'This thread is waiting for confirmation'
             )
 
-        previous = snapshot.values or {}
         initial_state = {
             'user_id': request.user_id,
             'thread_id': request.thread_id,
             'user_message': request.message,
             'timezone': request.timezone,
             'request_id': request.request_id,
+            'trace_id': trace.trace_id,
+            'parent_trace_id': trace.parent_trace_id,
+            'trace_operation': 'chat',
             'intent_result': None,
             'pending_route': None,
             'pending_query_clarification': previous.get(
@@ -133,9 +160,23 @@ class TaskAgentService:
             'task_update_message': None,
             'final_response': None,
             'error_message': None,
+            'error': None,
         }
-        await self._graph.ainvoke(initial_state, config=config)
-        response = await self._current_response(config, request.thread_id)
+        try:
+            await self._graph.ainvoke(initial_state, config=config)
+            response = await self._current_response(
+                config,
+                request.thread_id,
+                trace_id=trace.trace_id,
+            )
+        except Exception:
+            await self._observability.finish_trace(
+                trace,
+                status=TraceStatus.FAILED,
+                error_code='internal_error',
+            )
+            raise
+        await self._finish_response_trace(trace, response)
         await self._record_exchange(
             user_id=request.user_id,
             thread_id=request.thread_id,
@@ -149,26 +190,56 @@ class TaskAgentService:
         config = self._config(request.user_id, request.thread_id)
         snapshot = await self._graph.aget_state(config)
         values = snapshot.values
+        trace = await self._observability.start_trace(
+            user_id=request.user_id,
+            thread_id=request.thread_id,
+            request_id=f'confirm:{request.action_id}:{request.action.value}',
+            operation='confirm',
+            parent_trace_id=values.get('trace_id') if values else None,
+            input_payload=request.model_dump(mode='json', exclude_none=True),
+        )
         if not values:
+            await self._observability.finish_trace(
+                trace,
+                status=TraceStatus.FAILED,
+                error_code='thread_not_found',
+            )
             raise AgentThreadNotFoundError('Agent thread was not found')
         if (
             values.get('user_id') != request.user_id
             or values.get('thread_id') != request.thread_id
         ):
+            await self._observability.finish_trace(
+                trace,
+                status=TraceStatus.FAILED,
+                error_code='thread_not_found',
+            )
             raise AgentThreadNotFoundError('Agent thread was not found')
 
         if values.get('last_handled_action_id') == request.action_id:
             response = self._response_from_snapshot(
                 snapshot,
                 request.thread_id,
+                trace_id=trace.trace_id,
             )
+            await self._finish_response_trace(trace, response)
             await self._record_confirmation(request, response)
             return response
         if not snapshot.next:
+            await self._observability.finish_trace(
+                trace,
+                status=TraceStatus.FAILED,
+                error_code='thread_conflict',
+            )
             raise AgentThreadConflictError('This thread is not awaiting confirmation')
 
         pending = PendingAction.model_validate(values.get('pending_action'))
         if pending.id != request.action_id:
+            await self._observability.finish_trace(
+                trace,
+                status=TraceStatus.FAILED,
+                error_code='thread_conflict',
+            )
             raise AgentThreadConflictError('action_id is not the current pending action')
 
         decision = request.model_dump(
@@ -176,10 +247,54 @@ class TaskAgentService:
             include={'action_id', 'action', 'edits', 'feedback'},
             exclude_none=True,
         )
-        await self._graph.ainvoke(Command(resume=decision), config=config)
-        response = await self._current_response(config, request.thread_id)
+        try:
+            await self._graph.ainvoke(
+                Command(
+                    resume=decision,
+                    update={
+                        'trace_id': trace.trace_id,
+                        'parent_trace_id': trace.parent_trace_id,
+                        'trace_operation': 'confirm',
+                        'request_id': trace.request_id,
+                        'error': None,
+                        'error_message': None,
+                    },
+                ),
+                config=config,
+            )
+            response = await self._current_response(
+                config,
+                request.thread_id,
+                trace_id=trace.trace_id,
+            )
+        except Exception:
+            await self._observability.finish_trace(
+                trace,
+                status=TraceStatus.FAILED,
+                error_code='internal_error',
+            )
+            raise
+        await self._finish_response_trace(trace, response)
         await self._record_confirmation(request, response)
         return response
+
+    async def _finish_response_trace(
+        self,
+        trace: TraceRecord,
+        response: AgentResponse,
+    ) -> None:
+        if response.status == 'awaiting_confirmation':
+            status = TraceStatus.INTERRUPTED
+        elif response.status == 'error':
+            status = TraceStatus.FAILED
+        else:
+            status = TraceStatus.SUCCEEDED
+        await self._observability.finish_trace(
+            trace,
+            status=status,
+            error_code=response.error.code if response.error else None,
+            output_payload=response,
+        )
 
     async def get_conversation_history(
         self,
@@ -191,6 +306,38 @@ class TaskAgentService:
         if self._conversation_repository is None:
             return ConversationHistoryResponse(**scope.model_dump())
         return await self._conversation_repository.get_history(scope=scope)
+
+    async def get_trace(
+        self,
+        *,
+        user_id: str,
+        trace_id: str,
+    ) -> TraceDetailResponse:
+        repository = self._observability.repository
+        if repository is None:
+            raise AgentTraceNotFoundError('Trace was not found')
+        trace = await repository.get_trace(
+            tenant_id=self._tenant_id,
+            user_id=user_id,
+            trace_id=trace_id,
+        )
+        if trace is None:
+            raise AgentTraceNotFoundError('Trace was not found')
+        events = await repository.list_trace_events(
+            tenant_id=self._tenant_id,
+            user_id=user_id,
+            trace_id=trace_id,
+        )
+        tool_executions = await repository.list_tool_executions(
+            tenant_id=self._tenant_id,
+            user_id=user_id,
+            trace_id=trace_id,
+        )
+        return TraceDetailResponse(
+            trace=trace,
+            events=events,
+            tool_executions=tool_executions,
+        )
 
     async def _record_confirmation(
         self,
@@ -249,18 +396,30 @@ class TaskAgentService:
         self,
         config: dict[str, dict[str, str]],
         thread_id: str,
+        trace_id: str | None = None,
     ) -> AgentResponse:
         snapshot = await self._graph.aget_state(config)
-        return self._response_from_snapshot(snapshot, thread_id)
+        return self._response_from_snapshot(
+            snapshot,
+            thread_id,
+            trace_id=trace_id,
+        )
 
     @staticmethod
     def _response_from_snapshot(
         snapshot: StateSnapshot,
         thread_id: str,
+        trace_id: str | None = None,
     ) -> AgentResponse:
         values = snapshot.values
         pending = bool(snapshot.next)
-        error = values.get('error_message')
+        error_data = values.get('error')
+        error_info = (
+            AgentErrorInfo.model_validate(error_data)
+            if error_data
+            else None
+        )
+        error = error_info.message if error_info else values.get('error_message')
         created = values.get('created_task')
         updated = values.get('updated_task')
         selected = values.get('selected_task')
@@ -327,7 +486,15 @@ class TaskAgentService:
         return AgentResponse(
             status=status,
             thread_id=thread_id,
+            trace_id=str(trace_id or values.get('trace_id') or 'untracked'),
             message=message,
+            error=(
+                error_info.model_copy(
+                    update={'trace_id': trace_id or error_info.trace_id}
+                )
+                if error_info
+                else None
+            ),
             pending_action=(
                 PendingAction.model_validate(values['pending_action'])
                 if pending and values.get('pending_action')

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.schemas.draft import TaskDraftCandidate
 from app.schemas.task import utc_now
+from app.services.observability import execute_observed_model
 
 
 ParsedTaskDraft = TaskDraftCandidate
@@ -84,7 +85,12 @@ class StructuredOutputTaskParser:
                 validation_feedback=validation_feedback,
             )
             try:
-                output = await runnable.ainvoke(prompt)
+                output = await execute_observed_model(
+                    component='task_parser',
+                    attempt=attempt,
+                    input_payload={'messages': prompt},
+                    operation=lambda: runnable.ainvoke(prompt),
+                )
                 draft = (
                     output
                     if isinstance(output, TaskDraftCandidate)

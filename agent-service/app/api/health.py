@@ -26,13 +26,13 @@ async def get_redis_health(request: Request) -> HealthResponse:
         healthy = await redis.ping()
     except RedisError as exc:
         raise AppError(
-            'Redis is unavailable',
+            '任务存储暂时不可用，请稍后重试。',
             code='redis_unavailable',
             status_code=503,
         ) from exc
     if not healthy:
         raise AppError(
-            'Redis is unavailable',
+            '任务存储暂时不可用，请稍后重试。',
             code='redis_unavailable',
             status_code=503,
         )

@@ -13,6 +13,8 @@ from app.services.task_response import (
     format_zero_match_response,
 )
 from app.tools.task_tools import query_tasks
+from app.services.error_mapping import error_state
+from app.services.observability import ObservabilityService, execute_observed_tool
 logger = logging.getLogger(__name__)
 
 
@@ -24,14 +26,22 @@ async def resolve_task_reference(
     task_matcher: TaskMatcher,
     clock: Callable[[], datetime],
     pending_ttl: timedelta,
+    observability: ObservabilityService | None = None,
 ) -> dict[str, object]:
     if repository is None:
         return {'error_message': 'Task repository is not configured'}
     try:
         now = clock()
-        result = await query_tasks(
-            repository=repository,
-            query=TaskQuery(user_id=state['user_id'], limit=100),
+        query = TaskQuery(user_id=state['user_id'], limit=100)
+        result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='query_tasks',
+            input_payload=query.model_dump(mode='json'),
+            operation=lambda: query_tasks(
+                repository=repository,
+                query=query,
+            ),
         )
         matched = task_matcher.match(
             reference=state.get('task_reference', ''),
@@ -39,7 +49,7 @@ async def resolve_task_reference(
             tasks=result.items,
         )
     except Exception as exc:
-        return {'error_message': f'Task reference resolution failed: {exc}'}
+        return error_state(exc, trace_id=state.get('trace_id'))
 
     serialized = [
         task.model_dump(mode='json') for task in matched.tasks

@@ -238,7 +238,9 @@ async def test_illegal_status_transition_is_rejected_before_confirmation() -> No
         response = await harness.chat('非法任务已经完成了')
 
         assert response.status == 'error'
-        assert 'Invalid task status transition' in response.message
+        assert response.message == '当前任务状态不支持此操作。'
+        assert response.error is not None
+        assert response.error.code == 'invalid_status_transition'
         assert response.pending_action is None
         stored = await harness.repository.get(
             user_id='user-1',

@@ -11,6 +11,7 @@ from app.intent.exceptions import (
 )
 from app.intent.models import IntentRecognitionContext, IntentResult
 from app.intent.prompts import IntentPromptBuilder
+from app.services.observability import execute_observed_model
 
 
 class StructuredIntentModel(Protocol):
@@ -38,7 +39,15 @@ class LLMIntentClassifier:
     ) -> IntentResult:
         messages = self._prompt_builder(context)
         try:
-            output = await self._structured_model.ainvoke(messages)
+            output = await execute_observed_model(
+                component='intent_classifier',
+                attempt=1,
+                input_payload={
+                    'context': context,
+                    'messages': messages,
+                },
+                operation=lambda: self._structured_model.ainvoke(messages),
+            )
             return IntentResult.model_validate(output)
         except self._unavailable_exceptions as exc:
             raise IntentProviderUnavailableError(

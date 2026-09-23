@@ -58,6 +58,17 @@ class Settings(BaseSettings):
         le=1000,
         multiple_of=2,
     )
+    tool_log_ttl_seconds: int = Field(
+        default=2_592_000,
+        ge=3600,
+        le=31_536_000,
+    )
+    trace_ttl_seconds: int = Field(
+        default=604_800,
+        ge=3600,
+        le=31_536_000,
+    )
+    trace_max_events: int = Field(default=1000, ge=20, le=5000)
     intent_model_temperature: float = Field(default=0, ge=0, le=2)
     intent_model_max_tokens: int = Field(default=200, ge=1)
     intent_model_enable_thinking: bool = False

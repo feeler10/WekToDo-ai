@@ -5,6 +5,7 @@ from app.graph.state import TaskAgentState
 from app.schemas.audit import PendingAction
 from app.schemas.task import Task, TaskStatus, TaskStatusUpdate, utc_now
 from app.services.task_state import validate_status_transition
+from app.services.error_mapping import error_state
 
 
 def prepare_status_update(state: TaskAgentState) -> dict[str, object]:
@@ -54,7 +55,7 @@ def prepare_status_update(state: TaskAgentState) -> dict[str, object]:
             expires_at=now + timedelta(hours=24),
         )
     except Exception as exc:
-        return {'error_message': f'Could not prepare status update: {exc}'}
+        return error_state(exc, trace_id=state.get('trace_id'))
 
     return {
         'pending_action': pending.model_dump(mode='json'),

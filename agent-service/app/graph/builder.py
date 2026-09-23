@@ -1,4 +1,4 @@
-from collections.abc import Callable
+﻿from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
@@ -86,6 +86,7 @@ from app.matching.base import TaskMatcher
 from app.matching.factory import create_task_matcher
 from app.repositories.base import TaskRepository
 from app.schemas.task import utc_now
+from app.services.observability import ObservabilityService
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,7 @@ class GraphDependencies:
     task_update_parser: TaskUpdateParser | None = None
     subtask_planner: SubtaskPlanner | None = None
     task_delete_parser: TaskDeleteParser | None = None
+    observability: ObservabilityService | None = None
 
 
 def build_task_graph(
@@ -110,6 +112,15 @@ def build_task_graph(
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
     builder = StateGraph(TaskAgentState)
+
+    def add_node(name: str, node: Callable[..., object]) -> None:
+        wrapped = (
+            dependencies.observability.wrap_graph_node(name, node)
+            if dependencies.observability is not None
+            else node
+        )
+        builder.add_node(name, wrapped)
+
     task_matcher = dependencies.task_matcher or create_task_matcher()
     pending_ttl = timedelta(
         seconds=dependencies.pending_context_ttl_seconds
@@ -117,11 +128,11 @@ def build_task_graph(
     active_task_ttl = timedelta(
         seconds=dependencies.active_task_context_ttl_seconds
     )
-    builder.add_node(
+    add_node(
         'route_pending_state',
         partial(route_pending_state, clock=dependencies.clock),
     )
-    builder.add_node(
+    add_node(
         'resolve_query_clarification',
         partial(
             resolve_query_clarification,
@@ -129,7 +140,7 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node(
+    add_node(
         'resolve_task_selection',
         partial(
             resolve_task_selection,
@@ -137,7 +148,7 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node(
+    add_node(
         'classify_intent',
         partial(
             classify_intent,
@@ -145,34 +156,36 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node(
+    add_node(
         'parse_task',
         partial(parse_task, parser=dependencies.parser),
     )
-    builder.add_node('validate_task', validate_task)
-    builder.add_node('calculate_priority', calculate_priority)
-    builder.add_node(
+    add_node('validate_task', validate_task)
+    add_node('calculate_priority', calculate_priority)
+    add_node(
         'query_task_data',
         partial(
             query_task_data,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
             clock=dependencies.clock,
             task_matcher=task_matcher,
             pending_ttl=pending_ttl,
         ),
     )
-    builder.add_node(
+    add_node(
         'resolve_task_reference',
         partial(
             resolve_task_reference,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
             task_matcher=task_matcher,
             clock=dependencies.clock,
             pending_ttl=pending_ttl,
         ),
     )
-    builder.add_node('prepare_status_update', prepare_status_update)
-    builder.add_node(
+    add_node('prepare_status_update', prepare_status_update)
+    add_node(
         'parse_task_update',
         partial(
             parse_task_update,
@@ -180,14 +193,14 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node(
+    add_node(
         'resolve_task_draft_clarification',
         partial(
             resolve_task_draft_clarification,
             clock=dependencies.clock,
         ),
     )
-    builder.add_node(
+    add_node(
         'resolve_task_update_clarification',
         partial(
             resolve_task_update_clarification,
@@ -195,11 +208,11 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node(
+    add_node(
         'resolve_context_reference',
         partial(resolve_context_reference, clock=dependencies.clock),
     )
-    builder.add_node(
+    add_node(
         'resolve_task_delete_selection',
         partial(
             resolve_task_delete_selection,
@@ -207,8 +220,8 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node('prepare_task_update', prepare_task_update)
-    builder.add_node(
+    add_node('prepare_task_update', prepare_task_update)
+    add_node(
         'parse_task_delete',
         partial(
             parse_task_delete,
@@ -216,14 +229,14 @@ def build_task_graph(
             clock=dependencies.clock,
         ),
     )
-    builder.add_node(
+    add_node(
         'prepare_task_delete',
         partial(
             prepare_task_delete,
             repository=dependencies.task_repository,
         ),
     )
-    builder.add_node(
+    add_node(
         'prepare_task_delete_batch',
         partial(
             prepare_task_delete_batch,
@@ -233,31 +246,31 @@ def build_task_graph(
             pending_ttl=pending_ttl,
         ),
     )
-    builder.add_node('prepare_task_restore', prepare_task_restore)
-    builder.add_node(
+    add_node('prepare_task_restore', prepare_task_restore)
+    add_node(
         'load_decomposition_context',
         partial(
             load_decomposition_context,
             repository=dependencies.task_repository,
         ),
     )
-    builder.add_node(
+    add_node(
         'generate_subtask_plan',
         partial(
             generate_subtask_plan,
             planner=dependencies.subtask_planner,
         ),
     )
-    builder.add_node(
+    add_node(
         'validate_subtask_plan',
         validate_generated_subtask_plan,
     )
-    builder.add_node(
+    add_node(
         'prepare_subtask_confirmation',
         prepare_subtask_confirmation,
     )
-    builder.add_node('prepare_confirmation', prepare_confirmation)
-    builder.add_node(
+    add_node('prepare_confirmation', prepare_confirmation)
+    add_node(
         'prepare_task_draft_clarification',
         partial(
             prepare_task_draft_clarification,
@@ -266,7 +279,7 @@ def build_task_graph(
             max_rounds=dependencies.task_draft_clarification_max_rounds,
         ),
     )
-    builder.add_node(
+    add_node(
         'prepare_task_update_clarification',
         partial(
             prepare_task_update_clarification,
@@ -275,58 +288,65 @@ def build_task_graph(
             max_rounds=dependencies.task_update_clarification_max_rounds,
         ),
     )
-    builder.add_node('request_confirmation', request_confirmation)
-    builder.add_node(
+    add_node('request_confirmation', request_confirmation)
+    add_node(
         'execute_create_task',
         partial(
             execute_create_task,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
         ),
     )
-    builder.add_node(
+    add_node(
         'execute_status_update',
         partial(
             execute_status_update,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
         ),
     )
-    builder.add_node(
+    add_node(
         'execute_create_subtasks_batch',
         partial(
             execute_create_subtasks_batch,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
         ),
     )
-    builder.add_node(
+    add_node(
         'execute_task_update',
         partial(
             execute_task_update,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
         ),
     )
-    builder.add_node(
+    add_node(
         'execute_task_delete',
         partial(
             execute_task_delete,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
         ),
     )
-    builder.add_node(
+    add_node(
         'execute_task_delete_batch',
         partial(
             execute_task_delete_batch,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
         ),
     )
-    builder.add_node(
+    add_node(
         'execute_task_restore',
         partial(
             execute_task_restore,
             repository=dependencies.task_repository,
+            observability=dependencies.observability,
         ),
     )
-    builder.add_node('handle_error', handle_error)
-    builder.add_node(
+    add_node('handle_error', handle_error)
+    add_node(
         'request_intent_clarification',
         partial(
             request_intent_clarification,
@@ -334,13 +354,13 @@ def build_task_graph(
             pending_ttl=pending_ttl,
         ),
     )
-    builder.add_node('respond_to_general_chat', respond_to_general_chat)
-    builder.add_node(
+    add_node('respond_to_general_chat', respond_to_general_chat)
+    add_node(
         'respond_feature_unavailable',
         respond_feature_unavailable,
     )
-    builder.add_node('respond_unknown_intent', respond_unknown_intent)
-    builder.add_node(
+    add_node('respond_unknown_intent', respond_unknown_intent)
+    add_node(
         'finalize_turn',
         partial(
             finalize_turn,

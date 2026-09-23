@@ -11,6 +11,7 @@ from redis.exceptions import WatchError
 
 from app.repositories.base import TaskRepository
 from app.repositories.exceptions import (
+    IdempotencyConflictError,
     TaskAlreadyExistsError,
     TaskDeletionBlockedError,
     TaskNotFoundError,
@@ -201,7 +202,7 @@ class RedisTaskRepository(TaskRepository):
                         record = json.loads(self._text(existing_record))
                         await pipeline.unwatch()
                         if record.get('fingerprint') != fingerprint:
-                            raise TaskRepositoryConsistencyError(
+                            raise IdempotencyConflictError(
                                 'Batch idempotency key was reused with different input'
                             )
                         return SubtaskBatchResult(
@@ -482,7 +483,7 @@ class RedisTaskRepository(TaskRepository):
                                 record.get('task_id') != task_id
                                 or record.get('changes') != change_payload
                             ):
-                                raise TaskRepositoryConsistencyError(
+                                raise IdempotencyConflictError(
                                     'Task update idempotency key was reused '
                                     'with different input'
                                 )
@@ -605,7 +606,7 @@ class RedisTaskRepository(TaskRepository):
                             record.get('task_id') != task_id
                             or record.get('expected_version') != expected_version
                         ):
-                            raise TaskRepositoryConsistencyError(
+                            raise IdempotencyConflictError(
                                 'Task delete idempotency key was reused '
                                 'with different input'
                             )
@@ -868,7 +869,7 @@ class RedisTaskRepository(TaskRepository):
                         record = json.loads(self._text(existing_record))
                         await pipeline.unwatch()
                         if record.get('fingerprint') != fingerprint:
-                            raise TaskRepositoryConsistencyError(
+                            raise IdempotencyConflictError(
                                 'Task delete batch idempotency key was reused '
                                 'with different input'
                             )
@@ -1197,7 +1198,7 @@ class RedisTaskRepository(TaskRepository):
                                 or record.get('confirmed_reopen') != confirmed_reopen
                                 or record.get('confirmed_restore') != confirmed_restore
                             ):
-                                raise TaskRepositoryConsistencyError(
+                                raise IdempotencyConflictError(
                                     'Status idempotency key was reused with different input'
                                 )
                             replayed = Task.model_validate(record.get('task'))

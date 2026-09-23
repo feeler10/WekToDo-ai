@@ -7,6 +7,8 @@ from app.schemas.task_deletion import (
     TaskDeleteParseResult,
     TaskDeleteTargetScope,
 )
+from app.services.error_mapping import error_state
+from app.services.exceptions import ModelUnavailableError
 
 
 async def parse_task_delete(
@@ -39,7 +41,10 @@ async def parse_task_delete(
                 )
             )
     except Exception as exc:
-        return {'error_message': f'删除条件解析失败：{exc}'}
+        return error_state(
+            ModelUnavailableError() if not isinstance(exc, ModelUnavailableError) else exc,
+            trace_id=state.get('trace_id'),
+        )
 
     single_exact = (
         not result.needs_clarification

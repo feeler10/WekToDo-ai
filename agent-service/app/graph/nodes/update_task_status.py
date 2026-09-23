@@ -4,12 +4,15 @@ from app.schemas.audit import PendingAction
 from app.schemas.task import TaskStatusUpdate
 from app.tools.task_tools import update_task_status_with_rollup
 from app.services.task_response import format_status_update_result
+from app.services.error_mapping import error_state
+from app.services.observability import ObservabilityService, execute_observed_tool
 
 
 async def execute_status_update(
     state: TaskAgentState,
     *,
     repository: TaskRepository | None,
+    observability: ObservabilityService | None = None,
 ) -> dict[str, object]:
     if repository is None:
         return {'error_message': 'Task repository is not configured'}
@@ -18,20 +21,30 @@ async def execute_status_update(
         payload = TaskStatusUpdate.model_validate(pending.payload)
         if pending.target_id is None:
             raise ValueError('Status update target_id is required')
-        result = await update_task_status_with_rollup(
-            repository=repository,
-            user_id=payload.user_id,
-            task_id=pending.target_id,
-            target_status=payload.target_status,
-            expected_version=payload.expected_version,
-            confirmed_reopen=payload.confirmed_reopen,
-            confirmed_restore=payload.confirmed_restore,
+        confirmed = pending.confirmation_status == 'approved'
+        result = await execute_observed_tool(
+            observability,
+            state=state,
+            tool_name='update_task_status_with_rollup',
+            input_payload=pending.payload,
+            confirmed=confirmed,
             idempotency_key=pending.idempotency_key,
-            confirmed=pending.confirmation_status == 'approved',
+            action_id=pending.id,
+            operation=lambda: update_task_status_with_rollup(
+                repository=repository,
+                user_id=payload.user_id,
+                task_id=pending.target_id or '',
+                target_status=payload.target_status,
+                expected_version=payload.expected_version,
+                confirmed_reopen=payload.confirmed_reopen,
+                confirmed_restore=payload.confirmed_restore,
+                idempotency_key=pending.idempotency_key,
+                confirmed=confirmed,
+            ),
         )
         task = result.task
     except Exception as exc:
-        return {'error_message': f'Task status update failed: {exc}'}
+        return error_state(exc, trace_id=state.get('trace_id'))
     message = format_status_update_result(task)
     if result.parent_task is not None:
         if result.parent_task.status.value == 'DONE':

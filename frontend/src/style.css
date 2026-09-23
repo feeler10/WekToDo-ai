@@ -251,6 +251,15 @@ p {
   white-space: pre-wrap;
 }
 
+.trace-link {
+  display: block;
+  height: auto;
+  margin-top: 4px;
+  padding: 0;
+  color: #65718a;
+  font-size: 11px;
+}
+
 .message-row.user .message-bubble {
   color: #fff;
   background: #4263eb;
@@ -590,6 +599,139 @@ p {
   color: #667085;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.trace-current-id {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 18px;
+  color: #8a93a5;
+  font-size: 12px;
+}
+
+.trace-current-id .ant-typography {
+  min-width: 0;
+  margin-bottom: 0;
+  color: #263148;
+  overflow-wrap: anywhere;
+}
+
+.trace-section + .trace-section {
+  margin-top: 28px;
+}
+
+.trace-section-heading,
+.trace-event-heading,
+.trace-event-meta,
+.tool-execution-meta {
+  display: flex;
+  align-items: center;
+}
+
+.trace-event-details {
+  margin-top: 6px;
+  border: 1px solid #edf0f6;
+  border-radius: 9px;
+  background: #fbfcff;
+}
+
+.trace-event-details .ant-collapse-header {
+  padding: 8px 10px !important;
+  font-size: 12px;
+}
+
+.trace-event-details .ant-collapse-content-box {
+  padding: 0 10px 10px !important;
+}
+
+.trace-event-details .trace-payload {
+  margin-top: 0;
+}
+
+.trace-section-heading {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.trace-section-heading h3 {
+  margin: 0;
+  color: #1c2537;
+  font-size: 16px;
+}
+
+.trace-section-heading > span {
+  color: #8a93a5;
+  font-size: 12px;
+}
+
+.trace-confidence {
+  margin-left: 8px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.trace-timeline {
+  padding: 8px 4px 0;
+}
+
+.trace-event-heading {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trace-event-meta,
+.tool-execution-meta {
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 5px;
+  color: #8a93a5;
+  font-size: 11px;
+}
+
+.trace-error-code {
+  color: #cf1322;
+}
+
+.trace-payload {
+  max-width: 100%;
+  max-height: 220px;
+  margin: 9px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  color: #334155;
+  background: #f5f7fb;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-execution-list {
+  display: grid;
+  gap: 12px;
+}
+
+.tool-execution-card {
+  border-color: #e4e9f4;
+}
+
+.tool-execution-card .ant-collapse-content-box {
+  padding-inline: 0 !important;
+}
+
+.tool-execution-card .ant-collapse-header {
+  padding-inline: 0 !important;
+}
+
+@media (max-width: 760px) {
+  .trace-drawer .ant-drawer-content-wrapper {
+    width: 100% !important;
+  }
 }
 
 @media (max-width: 960px) {

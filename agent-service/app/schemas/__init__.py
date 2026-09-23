@@ -1,6 +1,11 @@
 '''Pydantic domain and transport schemas.'''
 
-from app.schemas.audit import PendingAction, ToolExecutionLog
+from app.schemas.audit import (
+    PendingAction,
+    ToolExecutionLog,
+    ToolExecutionStatus,
+)
+from app.schemas.errors import AgentErrorInfo
 from app.schemas.priority import UrgencyFactors, UrgencyResult
 from app.schemas.task import (
     Task,
@@ -18,9 +23,17 @@ from app.schemas.task_attribute_update import (
     TaskFieldOperation,
     TaskUpdateParseResult,
 )
+from app.schemas.trace import (
+    TraceDetailResponse,
+    TraceEvent,
+    TraceEventType,
+    TraceRecord,
+    TraceStatus,
+)
 
 __all__ = [
     'PendingAction',
+    'AgentErrorInfo',
     'Task',
     'TaskCreate',
     'TaskListResponse',
@@ -34,6 +47,12 @@ __all__ = [
     'TaskFieldOperation',
     'TaskUpdateParseResult',
     'ToolExecutionLog',
+    'ToolExecutionStatus',
+    'TraceEvent',
+    'TraceEventType',
+    'TraceDetailResponse',
+    'TraceRecord',
+    'TraceStatus',
     'UrgencyFactors',
     'UrgencyResult',
 ]
